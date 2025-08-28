@@ -1,0 +1,41 @@
+# AINet Agent Configuration
+
+# Agent Configuration
+agent:
+  collection_interval: 30  # seconds between metric collections
+  batch_size: 10          # number of metrics to batch together
+  max_retries: 3          # max retries for operations
+  timeout: 30             # timeout in seconds
+
+# Data Sender Configuration
+sender:
+  server_url: "http://localhost:8000"  # Central server URL
+  api_key: null                        # API key for authentication
+  timeout: 30                          # HTTP timeout
+  max_retries: 3                       # Max retry attempts
+  retry_delay: 5                       # Initial retry delay (seconds)
+  batch_size: 10                       # Metrics per batch
+  max_queue_size: 1000                 # Max queued metrics
+  ssl_verify: true                     # Verify SSL certificates
+
+# Logging Configuration
+logging:
+  level: "INFO"                        # DEBUG, INFO, WARNING, ERROR
+  format: "text"                       # text or json
+  file: "/var/log/ainet/agent.log"     # Log file path (optional)
+
+# Network Monitoring Settings
+monitoring:
+  interfaces: "all"                    # Monitor all interfaces or specify list
+  collect_interface_details: true     # Collect detailed interface info
+  ping_targets:                       # Additional ping targets
+    - name: "google_dns"
+      host: "8.8.8.8"
+    - name: "cloudflare_dns" 
+      host: "1.1.1.1"
+  ping_timeout: 5                     # Ping timeout in seconds
+
+# Security Settings
+security:
+  api_key_header: "X-API-Key"         # Header name for API key
+  user_agent: "AINet-Agent/1.0"       # User agent string

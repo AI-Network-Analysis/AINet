@@ -1,0 +1,84 @@
+# AI Network Monitoring System Configuration
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: true
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+
+# Database Configuration
+database:
+  url: "sqlite:///./ainet.db"
+  pool_size: 20
+  max_overflow: 30
+
+# Redis Configuration (for caching and real-time data)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+
+# Agent Configuration
+agent:
+  collection_interval: 30  # seconds
+  batch_size: 100
+  max_retries: 3
+  timeout: 30
+
+# Network Monitoring Configuration
+monitoring:
+  interfaces: "all"  # or specify specific interfaces
+  metrics:
+    - bandwidth
+    - connections
+    - packet_loss
+    - latency
+    - cpu_usage
+    - memory_usage
+    - disk_usage
+  
+  # Thresholds for basic anomaly detection
+  thresholds:
+    cpu_usage: 80
+    memory_usage: 85
+    disk_usage: 90
+    bandwidth_utilization: 90
+    packet_loss: 5  # percentage
+
+# AI Configuration
+ai:
+  model_provider: "openai"  # or "anthropic", "local"
+  model_name: "gpt-4"
+  temperature: 0.1
+  max_tokens: 1000
+  
+  # Anomaly detection parameters
+  anomaly_detection:
+    window_size: 100  # number of data points to analyze
+    sensitivity: 0.8  # threshold for anomaly detection
+    min_samples: 20  # minimum samples before running detection
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/ainet.log"
+  max_size: "100MB"
+  backup_count: 5
+
+# Security Configuration
+security:
+  api_key_header: "X-API-Key"
+  encryption_key: null  # will be generated if not provided
+  jwt_secret: null  # will be generated if not provided
+  jwt_expiry: 3600  # seconds
+
+# Dashboard Configuration
+dashboard:
+  title: "AI Network Monitor"
+  refresh_interval: 5  # seconds
+  max_display_points: 1000
