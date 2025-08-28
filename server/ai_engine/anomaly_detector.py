@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, TypedDict
 import numpy as np
 from dataclasses import dataclass, asdict
 
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, PydanticOutputParser
@@ -96,10 +96,10 @@ class AnomalyDetector:
         
         # Initialize LLM
         model_config = config.get('ai', {})
-        self.llm = ChatOpenAI(
-            model=model_config.get('model_name', 'gpt-4'),
+        self.llm = ChatGoogleGenerativeAI(
+            model=model_config.get('model_name', 'gemini-2.5-flash'),
             temperature=model_config.get('temperature', 0.1),
-            max_tokens=model_config.get('max_tokens', 1000)
+            max_output_tokens=model_config.get('max_tokens', 1000)
         )
         
         # Configure analysis parameters

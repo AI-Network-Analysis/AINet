@@ -12,12 +12,13 @@ import uvicorn
 from pathlib import Path
 from datetime import datetime
 from contextlib import asynccontextmanager
-
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
+load_dotenv()
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
