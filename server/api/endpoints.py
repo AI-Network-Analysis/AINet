@@ -29,10 +29,8 @@ async def get_current_agent(
 ) -> Optional[Agent]:
     """Authenticate agent using API key"""
     if not x_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API key required"
-        )
+        # Allow access without API key for development/testing
+        return None
     
     # Hash the provided key
     key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()

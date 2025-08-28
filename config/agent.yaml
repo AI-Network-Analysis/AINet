@@ -22,7 +22,7 @@ sender:
 logging:
   level: "INFO"                        # DEBUG, INFO, WARNING, ERROR
   format: "text"                       # text or json
-  file: "/var/log/ainet/agent.log"     # Log file path (optional)
+  file: "./logs/agent.log"             # Log file path
 
 # Network Monitoring Settings
 monitoring:
