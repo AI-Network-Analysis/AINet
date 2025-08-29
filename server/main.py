@@ -17,6 +17,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from ai_engine import AIEngineService, AIEngineScheduler
+import asyncio
 
 load_dotenv()
 # Add the project root to Python path
@@ -72,9 +74,24 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
+    # Initialize AI engine
+    try:
+        app.state.ai_service = AIEngineService(app.state.config)
+        app.state.ai_scheduler = AIEngineScheduler(app.state.ai_service, app.state.config)
+        app.state.ai_task = asyncio.create_task(app.state.ai_scheduler.start_periodic_analysis())
+        logger.info("AI engine initialized and periodic analysis started")
+    except Exception as e:
+        logger.error(f"Failed to initialize AI engine: {e}")
+        raise
+    
     yield
     
     # Shutdown
+    if hasattr(app.state, 'ai_scheduler'):
+        app.state.ai_scheduler.stop()
+        await app.state.ai_task
+        logger.info("AI engine shut down")
+    
     logger.info("Shutting down AINet Central Server...")
 
 def create_app(config: dict) -> FastAPI:
@@ -130,9 +147,12 @@ def create_app(config: dict) -> FastAPI:
         except:
             db_healthy = False
         
+        ai_healthy = hasattr(app.state, 'ai_service') and hasattr(app.state, 'ai_task') and not app.state.ai_task.done()
+        
         return {
-            "status": "healthy" if db_healthy else "unhealthy",
+            "status": "healthy" if db_healthy and ai_healthy else "unhealthy",
             "database": "connected" if db_healthy else "disconnected",
+            "ai_engine": "running" if ai_healthy else "not running",
             "timestamp": datetime.utcnow().isoformat(),
             "uptime": "N/A",  # TODO: Calculate uptime
             "version": "1.0.0"
@@ -171,7 +191,7 @@ def create_app(config: dict) -> FastAPI:
                 <h3>System Status</h3>
                 <p><strong>Server:</strong> <span class="status online">Online</span></p>
                 <p><strong>Database:</strong> <span class="status online">Connected</span></p>
-                <p><strong>AI Engine:</strong> <span class="status offline">Not Implemented</span></p>
+                <p><strong>AI Engine:</strong> <span class="status online">Online</span></p>
             </div>
             
             <div class="card">
@@ -190,7 +210,7 @@ def create_app(config: dict) -> FastAPI:
                     <li>✅ Agent Registration & Heartbeat</li>
                     <li>✅ Network Metrics Collection</li>
                     <li>✅ Data Storage & Retrieval</li>
-                    <li>🔄 AI Anomaly Detection (In Progress)</li>
+                    <li>✅ AI Anomaly Detection</li>
                     <li>🔄 Real-time Dashboard (In Progress)</li>
                     <li>🔄 Alert Management (In Progress)</li>
                 </ul>

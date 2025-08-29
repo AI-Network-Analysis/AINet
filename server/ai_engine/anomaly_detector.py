@@ -14,9 +14,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, PydanticOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 
-from langgraph.graph import Graph, StateGraph, START, END
+from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import AnyMessage, add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
@@ -117,7 +117,7 @@ class AnomalyDetector:
             'cloudflare_dns_latency_ms', 'local_gateway_latency_ms'
         ]
         
-    def _create_workflow(self) -> Graph:
+    def _create_workflow(self):
         """Create LangGraph workflow for anomaly detection"""
         workflow = StateGraph(AnalysisState)
         

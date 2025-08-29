@@ -451,3 +451,35 @@ async def get_alerts(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve alerts"
         )
+
+@api_router.post("/analyze/agent/{agent_id}", response_model=Dict[str, Any])
+async def analyze_single_agent(
+    agent_id: int,
+    request: Request,
+    time_window_hours: int = 24,
+    db: Session = Depends(get_db)
+):
+    """Trigger AI anomaly analysis for a specific agent"""
+    try:
+        ai_service = request.app.state.ai_service
+        analysis = await ai_service.analyze_agent_anomalies(agent_id, time_window_hours)
+        if not analysis:
+            raise HTTPException(status_code=400, detail="Analysis skipped or failed")
+        return {"status": "completed", "analysis_id": analysis.id}
+    except Exception as e:
+        logger.error(f"Error analyzing agent {agent_id}: {e}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
+
+@api_router.post("/analyze/all", response_model=Dict[str, Any])
+async def analyze_all_agents_endpoint(
+    request: Request,
+    time_window_hours: int = 24
+):
+    """Trigger AI anomaly analysis for all active agents"""
+    try:
+        ai_service = request.app.state.ai_service
+        results = await ai_service.analyze_all_agents(time_window_hours)
+        return results
+    except Exception as e:
+        logger.error(f"Error analyzing all agents: {e}")
+        raise HTTPException(status_code=500, detail="Batch analysis failed")
