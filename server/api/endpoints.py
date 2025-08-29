@@ -3,7 +3,7 @@ API Endpoints
 FastAPI endpoints for receiving data from agents and serving dashboard.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
