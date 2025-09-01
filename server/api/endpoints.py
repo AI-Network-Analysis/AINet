@@ -678,3 +678,140 @@ async def get_chat_status():
             "status": "error",
             "error": str(e)
         }
+
+@api_router.get("/chat/conversations")
+async def get_chat_conversations(db: Session = Depends(get_db)):
+    """Get a list of all chat conversations (thread IDs)"""
+    try:
+        from ..database.models import ChatCheckpoint
+        import json
+        
+        conversations = db.query(ChatCheckpoint).order_by(ChatCheckpoint.updated_at.desc()).all()
+        
+        result = []
+        for conv in conversations:
+            # Get the first user message as preview
+            checkpoint_data = conv.checkpoint
+            
+            # Handle both JSON object and JSON string formats
+            if isinstance(checkpoint_data, str):
+                try:
+                    checkpoint_data = json.loads(checkpoint_data)
+                except json.JSONDecodeError:
+                    checkpoint_data = {}
+            elif checkpoint_data is None:
+                checkpoint_data = {}
+            
+            messages = checkpoint_data.get("messages", [])
+            
+            preview = "New conversation"
+            last_message_time = conv.updated_at
+            
+            if messages:
+                # Find first user message for preview
+                for msg in messages:
+                    if isinstance(msg, dict) and msg.get("type") == "human":
+                        preview = msg.get("content", "")[:100]
+                        if len(msg.get("content", "")) > 100:
+                            preview += "..."
+                        break
+                
+                # Get timestamp from last message
+                if messages:
+                    last_msg = messages[-1]
+                    if isinstance(last_msg, dict) and "timestamp" in last_msg:
+                        try:
+                            from datetime import datetime
+                            last_message_time = datetime.fromisoformat(last_msg["timestamp"])
+                        except:
+                            pass
+            
+            result.append({
+                "thread_id": conv.thread_id,
+                "preview": preview,
+                "message_count": len(messages),
+                "last_updated": last_message_time.isoformat(),
+                "updated_at": conv.updated_at.isoformat()
+            })
+        
+        return {
+            "conversations": result,
+            "total": len(result)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting chat conversations: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversations: {str(e)}"
+        )
+
+@api_router.get("/chat/conversations/{thread_id}")
+async def get_chat_conversation(thread_id: str):
+    """Get conversation history for a specific thread"""
+    try:
+        from ..ai_engine.chat_agent import get_chat_agent
+        
+        # Create a basic config for the chat agent
+        config = {
+            'ai': {
+                'model_name': 'gemini-2.0-flash-exp',
+                'temperature': 0.1,
+                'max_tokens': 1000
+            }
+        }
+        
+        # Get chat agent
+        chat_agent = get_chat_agent(config)
+        
+        # Get conversation history
+        history = chat_agent.get_conversation_history(thread_id)
+        
+        return {
+            "thread_id": thread_id,
+            "messages": history,
+            "message_count": len(history)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation {thread_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversation: {str(e)}"
+        )
+
+@api_router.delete("/chat/conversations/{thread_id}")
+async def delete_chat_conversation(thread_id: str):
+    """Delete a specific conversation"""
+    try:
+        from ..ai_engine.chat_agent import get_chat_agent
+        
+        # Create a basic config for the chat agent
+        config = {
+            'ai': {
+                'model_name': 'gemini-2.0-flash-exp',
+                'temperature': 0.1,
+                'max_tokens': 1000
+            }
+        }
+        
+        # Get chat agent
+        chat_agent = get_chat_agent(config)
+        
+        # Clear conversation
+        success = chat_agent.clear_conversation(thread_id)
+        
+        if success:
+            return {"message": f"Conversation {thread_id} deleted successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete conversation"
+            )
+        
+    except Exception as e:
+        logger.error(f"Error deleting conversation {thread_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete conversation: {str(e)}"
+        )
