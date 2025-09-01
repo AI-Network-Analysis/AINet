@@ -196,3 +196,11 @@ class MetricsAggregation(Base):
     
     # Data points count
     data_points = Column(Integer)
+
+class ChatCheckpoint(Base):
+    """Stores chat checkpoints for the AI agent"""
+    __tablename__ = "chat_checkpoints"
+
+    thread_id = Column(String(255), primary_key=True, index=True)
+    checkpoint = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=local_now, onupdate=local_now, index=True)

@@ -28,7 +28,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 # Import database models and connection
-from server.database.models import Agent, NetworkMetric, Alert, AIAnalysis
+from server.ai_engine.chat_memory import SQLAlchemyCheckpointer
+from server.database.models import Agent, NetworkMetric, Alert, AIAnalysis, ChatCheckpoint
 from server.database.connection import get_db, get_db_manager
 from server.ai_engine.service import AIEngineService
 from pydantic import BaseModel, Field
@@ -437,8 +438,14 @@ class AINetChatAgent:
         # Initialize memory for conversation history
         self.memory = MemorySaver()
         
+        # Initialize database checkpointer for persistence
+        self.db_checkpointer = SQLAlchemyCheckpointer()
+        
         # Create the graph
         self.graph = self._create_graph()
+        
+        # Load existing conversation state if available
+        self._conversation_cache = {}
     
     def _create_graph(self) -> StateGraph:
         """Create the LangGraph workflow."""
@@ -505,13 +512,33 @@ Be conversational but professional. If asked about capabilities outside of netwo
     async def chat(self, message: str, thread_id: str = "default") -> Dict[str, Any]:
         """Process a chat message and return the response with any tool calls."""
         try:
+            # Load conversation history from database if not in memory
+            if thread_id not in self._conversation_cache:
+                saved_state = self.db_checkpointer.get_checkpoint(thread_id)
+                if saved_state:
+                    self._conversation_cache[thread_id] = saved_state.get("messages", [])
+                else:
+                    self._conversation_cache[thread_id] = []
+            
             # Create a configuration with thread ID for memory persistence
             config = {"configurable": {"thread_id": thread_id}}
             
-            # Initialize state with just the current message
-            # The memory will handle conversation history automatically
+            # Initialize state with conversation history and current message
+            conversation_history = self._conversation_cache[thread_id]
+            messages_to_add = []
+            
+            # Add conversation history if not already in the langgraph memory
+            for msg in conversation_history:
+                if msg.get("type") == "human":
+                    messages_to_add.append(HumanMessage(content=msg["content"]))
+                elif msg.get("type") == "ai":
+                    messages_to_add.append(AIMessage(content=msg["content"]))
+            
+            # Add current message
+            messages_to_add.append(HumanMessage(content=message))
+            
             initial_state = {
-                "messages": [HumanMessage(content=message)],
+                "messages": messages_to_add,
                 "tool_calls": []
             }
             
@@ -532,6 +559,24 @@ Be conversational but professional. If asked about capabilities outside of netwo
                             "id": tool_call["id"]
                         })
             
+            # Update conversation cache
+            self._conversation_cache[thread_id].append({
+                "type": "human",
+                "content": message,
+                "timestamp": datetime.now().isoformat()
+            })
+            self._conversation_cache[thread_id].append({
+                "type": "ai", 
+                "content": final_message.content,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Save to database
+            self.db_checkpointer.put_checkpoint(thread_id, {
+                "messages": self._conversation_cache[thread_id],
+                "last_updated": datetime.now().isoformat()
+            })
+            
             return {
                 "response": final_message.content,
                 "tool_calls": tool_calls,
@@ -545,6 +590,33 @@ Be conversational but professional. If asked about capabilities outside of netwo
                 "tool_calls": [],
                 "success": False
             }
+    
+    def get_conversation_history(self, thread_id: str = "default") -> List[Dict[str, Any]]:
+        """Get conversation history for a thread."""
+        try:
+            if thread_id in self._conversation_cache:
+                return self._conversation_cache[thread_id]
+            
+            saved_state = self.db_checkpointer.get_checkpoint(thread_id)
+            if saved_state:
+                return saved_state.get("messages", [])
+            
+            return []
+        except Exception as e:
+            logger.error(f"Error getting conversation history: {e}")
+            return []
+    
+    def clear_conversation(self, thread_id: str = "default") -> bool:
+        """Clear conversation history for a thread."""
+        try:
+            if thread_id in self._conversation_cache:
+                del self._conversation_cache[thread_id]
+            
+            self.db_checkpointer.clear_checkpoint(thread_id)
+            return True
+        except Exception as e:
+            logger.error(f"Error clearing conversation: {e}")
+            return False
 
 # Global instance
 chat_agent = None

@@ -3,7 +3,7 @@ Database Connection
 Handles database connection, session management, and initialization.
 """
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import logging
@@ -107,7 +107,7 @@ class DatabaseManager:
         """Check if database connection is healthy"""
         try:
             with self.get_session() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
                 return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
