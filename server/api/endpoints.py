@@ -600,6 +600,7 @@ class ChatRequest(BaseModel):
     """Request model for chat interactions"""
     message: str = Field(..., description="User message to the AI agent")
     session_id: Optional[str] = Field(None, description="Optional session ID for conversation continuity")
+    conversation_history: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Previous messages in the conversation")
 
 class ChatResponse(BaseModel):
     """Response model for chat interactions"""
@@ -622,22 +623,30 @@ async def chat_with_agent(
     - Trigger new analysis on demand
     """
     try:
-        from ..ai_engine.chat_agent import AINetChatAgent
-        from ..main import app_config
+        from ..ai_engine.chat_agent import get_chat_agent
         
-        # Initialize chat agent
-        chat_agent = AINetChatAgent(app_config)
+        # Create a basic config for the chat agent
+        config = {
+            'ai': {
+                'model_name': 'gemini-2.0-flash-exp',
+                'temperature': 0.1,
+                'max_tokens': 1000
+            }
+        }
+        
+        # Get chat agent
+        chat_agent = get_chat_agent(config)
         
         # Process the chat request
-        result = await chat_agent.process_message(
+        result = await chat_agent.chat(
             message=request.message,
-            session_id=request.session_id
+            conversation_history=request.conversation_history or []
         )
         
         return ChatResponse(
             response=result["response"],
             tool_calls=result.get("tool_calls", []),
-            session_id=result["session_id"]
+            session_id=request.session_id or "default"
         )
         
     except Exception as e:

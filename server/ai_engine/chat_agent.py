@@ -24,13 +24,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 # Import database models and connection
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from database.models import Agent, NetworkMetric, Alert, AIAnalysis
-from database.connection import get_db, get_db_manager
-from ai_engine.service import AIAnalysisService
+from server.database.models import Agent, NetworkMetric, Alert, AIAnalysis
+from server.database.connection import get_db, get_db_manager
+from server.ai_engine.service import AIEngineService
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
