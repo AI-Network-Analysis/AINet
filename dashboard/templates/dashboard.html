@@ -528,6 +528,208 @@
             color: #7f8c8d;
             margin-top: 5px;
         }
+
+        /* Chat Styles */
+        .chat-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .chat-card {
+            height: 600px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-description {
+            color: #7f8c8d;
+            font-size: 0.95em;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 0;
+            margin-bottom: 20px;
+            max-height: 400px;
+            border: 1px solid #ecf0f1;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin: 15px;
+            padding: 15px;
+            border-radius: 12px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.user-message {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            margin-left: auto;
+            margin-right: 15px;
+        }
+
+        .message.ai-message {
+            background: white;
+            border: 1px solid #e1e8ed;
+            margin-right: auto;
+            margin-left: 15px;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .message-header .sender {
+            color: #2c3e50;
+        }
+
+        .message-header .timestamp {
+            color: #7f8c8d;
+            margin-left: auto;
+        }
+
+        .message-content {
+            line-height: 1.5;
+        }
+
+        .message-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .message-content li {
+            margin: 5px 0;
+        }
+
+        .tool-call {
+            background: #f1f3f4;
+            border: 1px solid #d1d9e0;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 8px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+
+        .tool-call-header {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .tool-call-result {
+            background: #e8f5e8;
+            border-left: 3px solid #27ae60;
+            padding: 8px;
+            margin-top: 5px;
+            white-space: pre-wrap;
+        }
+
+        .chat-input-container {
+            border-top: 1px solid #ecf0f1;
+            padding-top: 15px;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #chat-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #ecf0f1;
+            border-radius: 25px;
+            font-size: 0.95em;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        #chat-input:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        #send-btn {
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #send-btn:hover {
+            background: linear-gradient(135deg, #2980b9, #21618c);
+            transform: translateY(-2px);
+        }
+
+        #send-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85em;
+            color: #7f8c8d;
+        }
+
+        .status-dot {
+            font-size: 0.6em;
+            color: #27ae60;
+        }
+
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #7f8c8d;
+            font-style: italic;
+            padding: 10px 15px;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 3px;
+        }
+
+        .typing-dots span {
+            width: 6px;
+            height: 6px;
+            background: #bdc3c7;
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -559,6 +761,9 @@
             </button>
             <button class="tab" onclick="switchTab('metrics')">
                 <i class="fas fa-chart-line"></i> Metrics
+            </button>
+            <button class="tab" onclick="switchTab('chat')">
+                <i class="fas fa-comments"></i> AI Chat
             </button>
         </div>
 
@@ -758,6 +963,51 @@
             </div>
         </div>
 
+        <!-- Chat Tab -->
+        <div id="chat" class="tab-content">
+            <div class="chat-container">
+                <div class="card chat-card">
+                    <h3><i class="fas fa-robot"></i> AI Network Assistant</h3>
+                    <p class="chat-description">Ask questions about your network, agents, metrics, and analysis results. The AI can access real-time system data and trigger actions.</p>
+                    
+                    <div class="chat-messages" id="chat-messages">
+                        <!-- Chat messages will appear here -->
+                        <div class="message ai-message">
+                            <div class="message-header">
+                                <i class="fas fa-robot"></i>
+                                <span class="sender">AI Assistant</span>
+                                <span class="timestamp">Just now</span>
+                            </div>
+                            <div class="message-content">
+                                Hello! I'm your AI Network Assistant. I can help you with:
+                                <ul>
+                                    <li>🔍 Checking system status and agent information</li>
+                                    <li>📊 Retrieving network metrics and analysis results</li>
+                                    <li>🚨 Viewing recent alerts and their details</li>
+                                    <li>🧠 Triggering new AI analysis for specific agents</li>
+                                    <li>💡 Answering questions about your network infrastructure</li>
+                                </ul>
+                                What would you like to know?
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <input type="text" id="chat-input" placeholder="Ask me anything about your network..." />
+                            <button id="send-btn" onclick="sendMessage()">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        <div class="chat-status" id="chat-status">
+                            <i class="fas fa-circle status-dot"></i>
+                            <span>AI Assistant ready</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="refresh-time" id="last-refresh">
             Last updated: Never
         </div>
@@ -829,6 +1079,8 @@
             } else if (tabName === 'results') {
                 refreshAnalysisResults();
                 populateAgentFilterSelect();
+            } else if (tabName === 'chat') {
+                initializeChat();
             }
         }
 
@@ -1854,6 +2106,138 @@
                 setTimeout(refreshAnalysisResults, 1000);
             }
         };
+
+        // ============== CHAT FUNCTIONS ==============
+        
+        let chatSessionId = null;
+        let isTyping = false;
+
+        // Initialize chat functionality
+        function initializeChat() {
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            
+            // Enter key to send message
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            // Auto-focus input when chat tab is opened
+            if (currentTab === 'chat') {
+                chatInput.focus();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            
+            if (!message || isTyping) return;
+            
+            // Clear input and disable send button
+            input.value = '';
+            setTypingState(true);
+            
+            // Add user message to chat
+            addMessageToChat('user', message);
+            
+            try {
+                const response = await fetch('/api/v1/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: chatSessionId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update session ID
+                chatSessionId = data.session_id;
+                
+                // Add AI response to chat
+                addMessageToChat('ai', data.response, data.tool_calls);
+                
+            } catch (error) {
+                console.error('Chat error:', error);
+                addMessageToChat('ai', 'Sorry, I encountered an error. Please try again.');
+            } finally {
+                setTypingState(false);
+                input.focus();
+            }
+        }
+
+        function addMessageToChat(sender, content, toolCalls = []) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const isUser = sender === 'user';
+            
+            messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+            
+            let toolCallsHtml = '';
+            if (toolCalls && toolCalls.length > 0) {
+                toolCallsHtml = toolCalls.map(tool => `
+                    <div class="tool-call">
+                        <div class="tool-call-header">🔧 ${tool.name}</div>
+                        ${tool.result ? `<div class="tool-call-result">${JSON.stringify(tool.result, null, 2)}</div>` : ''}
+                    </div>
+                `).join('');
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <i class="fas fa-${isUser ? 'user' : 'robot'}"></i>
+                    <span class="sender">${isUser ? 'You' : 'AI Assistant'}</span>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+                <div class="message-content">
+                    ${content}
+                    ${toolCallsHtml}
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function setTypingState(typing) {
+            isTyping = typing;
+            const sendBtn = document.getElementById('send-btn');
+            const chatStatus = document.getElementById('chat-status');
+            
+            sendBtn.disabled = typing;
+            
+            if (typing) {
+                chatStatus.innerHTML = `
+                    <div class="typing-indicator">
+                        <i class="fas fa-circle status-dot"></i>
+                        <span>AI Assistant is thinking</span>
+                        <div class="typing-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                chatStatus.innerHTML = `
+                    <i class="fas fa-circle status-dot"></i>
+                    <span>AI Assistant ready</span>
+                `;
+            }
+        }
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', function() {

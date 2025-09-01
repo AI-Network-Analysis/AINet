@@ -593,3 +593,79 @@ async def get_analysis_result(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve analysis result"
         )
+
+# ============== CHAT ENDPOINTS ==============
+
+class ChatRequest(BaseModel):
+    """Request model for chat interactions"""
+    message: str = Field(..., description="User message to the AI agent")
+    session_id: Optional[str] = Field(None, description="Optional session ID for conversation continuity")
+
+class ChatResponse(BaseModel):
+    """Response model for chat interactions"""
+    response: str = Field(..., description="AI agent response")
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list, description="List of tool calls made by the agent")
+    session_id: str = Field(..., description="Session ID for conversation continuity")
+
+@api_router.post("/chat", response_model=ChatResponse)
+async def chat_with_agent(
+    request: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Chat with the AI agent that has access to system data and tools.
+    
+    The agent can:
+    - Answer questions about system status
+    - Retrieve agent information and metrics
+    - Check recent alerts and analysis results
+    - Trigger new analysis on demand
+    """
+    try:
+        from ..ai_engine.chat_agent import AINetChatAgent
+        from ..main import app_config
+        
+        # Initialize chat agent
+        chat_agent = AINetChatAgent(app_config)
+        
+        # Process the chat request
+        result = await chat_agent.process_message(
+            message=request.message,
+            session_id=request.session_id
+        )
+        
+        return ChatResponse(
+            response=result["response"],
+            tool_calls=result.get("tool_calls", []),
+            session_id=result["session_id"]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Chat processing failed: {str(e)}"
+        )
+
+@api_router.get("/chat/status")
+async def get_chat_status():
+    """Get the status of the chat agent system"""
+    try:
+        from ..ai_engine.chat_agent import AINetChatAgent
+        from ..main import app_config
+        
+        # Test agent initialization
+        chat_agent = AINetChatAgent(app_config)
+        
+        return {
+            "status": "online",
+            "available_tools": [tool.name for tool in chat_agent.tools],
+            "model": chat_agent.llm.model,
+            "temperature": chat_agent.llm.temperature
+        }
+    except Exception as e:
+        logger.error(f"Error checking chat status: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
