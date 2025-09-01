@@ -890,7 +890,9 @@
             const card = document.createElement('div');
             card.className = `agent-card ${!agent.is_online ? 'offline' : ''}`;
             
-            const lastSeen = new Date(agent.last_seen).toLocaleString();
+            // Convert UTC to local time
+            const lastSeenUTC = new Date(agent.last_seen + 'Z');
+            const lastSeen = lastSeenUTC.toLocaleString();
             const onlineStatus = agent.is_online ? 'Online' : 'Offline';
             const statusClass = agent.is_online ? 'online' : 'offline';
             
@@ -948,7 +950,9 @@
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert-item ${alert.severity}`;
             
-            const timestamp = new Date(alert.timestamp).toLocaleString();
+            // Convert UTC to local time
+            const timestampUTC = new Date(alert.timestamp + 'Z');
+            const timestamp = timestampUTC.toLocaleString();
             
             alertDiv.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
@@ -1557,7 +1561,9 @@
             
             card.className = cardClass;
             
-            const timestamp = new Date(result.timestamp).toLocaleString();
+            // Convert UTC timestamp to local time
+            const utcTimestamp = new Date(result.timestamp + 'Z'); // Add Z to indicate UTC
+            const localTimestamp = utcTimestamp.toLocaleString();
             const confidenceScore = result.confidence_score ? (result.confidence_score * 100).toFixed(1) : 'N/A';
             
             card.innerHTML = `
@@ -1565,7 +1571,7 @@
                     <div class="analysis-title">
                         <i class="fas fa-brain"></i> ${result.agent_hostname}
                         <span style="font-size: 0.8em; color: #7f8c8d; margin-left: 10px;">
-                            ${result.analysis_type || 'Analysis'}
+                            ${result.analysis_type || 'Analysis'} #${result.id}
                         </span>
                     </div>
                     <div class="analysis-confidence">
@@ -1575,8 +1581,12 @@
                 
                 <div class="analysis-meta">
                     <div class="analysis-meta-item">
+                        <span class="analysis-meta-label">Analysis ID:</span>
+                        <span class="analysis-meta-value">#${result.id}</span>
+                    </div>
+                    <div class="analysis-meta-item">
                         <span class="analysis-meta-label">Timestamp:</span>
-                        <span class="analysis-meta-value">${timestamp}</span>
+                        <span class="analysis-meta-value">${localTimestamp}</span>
                     </div>
                     <div class="analysis-meta-item">
                         <span class="analysis-meta-label">Model:</span>
