@@ -48,18 +48,6 @@ class AIEngineService:
                     logger.error(f"Agent {agent_id} not found")
                     return None
                 
-                # Check if recent analysis exists (within 1 hour)
-                if not force_analysis:
-                    recent_analysis = db.query(AIAnalysis).filter(
-                        AIAnalysis.agent_id == agent_id,
-                        AIAnalysis.timestamp >= datetime.utcnow() - timedelta(hours=1),
-                        AIAnalysis.status == "completed"
-                    ).first()
-                    
-                    if recent_analysis:
-                        logger.info(f"Recent analysis found for agent {agent_id}")
-                        return recent_analysis
-                
                 # Get metrics for analysis
                 since_time = datetime.utcnow() - timedelta(hours=time_window_hours)
                 metrics = db.query(NetworkMetric).filter(
