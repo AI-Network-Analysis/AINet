@@ -120,14 +120,14 @@ class AnomalyDetector:
     def _create_workflow(self):
         """Create LangGraph workflow for anomaly detection"""
         workflow = StateGraph(AnalysisState)
-        
+
         # Add nodes
         workflow.add_node("preprocess_data", self._preprocess_data)
         workflow.add_node("statistical_analysis", self._statistical_analysis)
         workflow.add_node("detect_anomalies", self._detect_anomalies)
         workflow.add_node("ai_analysis", self._ai_analysis)
         workflow.add_node("generate_recommendations", self._generate_recommendations)
-        
+
         # Add edges
         workflow.add_edge(START, "preprocess_data")
         workflow.add_edge("preprocess_data", "statistical_analysis")
@@ -135,11 +135,9 @@ class AnomalyDetector:
         workflow.add_edge("detect_anomalies", "ai_analysis")
         workflow.add_edge("ai_analysis", "generate_recommendations")
         workflow.add_edge("generate_recommendations", END)
-        
-        # Set up memory
-        memory = MemorySaver()
-        
-        return workflow.compile(checkpointer=memory)
+
+        # Compile without checkpointing to avoid serialization issues in runtime
+        return workflow.compile()
     
     def _preprocess_data(self, state: AnalysisState) -> Dict[str, Any]:
         """Preprocess raw metrics data"""
@@ -344,8 +342,67 @@ class AnomalyDetector:
             }
             
         except Exception as e:
-            logger.error(f"Error in AI analysis: {e}")
-            return {**state, "error": str(e)}
+            # Fallback: build a basic analysis from anomaly candidates without LLM
+            logger.error(f"Error in AI analysis, using fallback: {e}")
+            try:
+                findings = []
+                for cand in state.get('anomaly_candidates', [])[:20]:  # cap to 20
+                    findings.append(AnomalyFinding(
+                        metric_name=cand.get('metric_name', 'unknown'),
+                        anomaly_type=cand.get('type', 'z_score'),
+                        severity=str(cand.get('severity', 'low')),
+                        confidence=min(1.0, max(0.0, float(cand.get('z_score', 0)) / 5.0 + 0.2)),
+                        description=f"Detected anomalous deviation of {cand.get('deviation_pct', 0):.1f}% from baseline",
+                        affected_timeframe="recent",
+                        baseline_value=float(cand.get('baseline', 0) or 0),
+                        anomalous_value=float(cand.get('value', 0) or 0),
+                        deviation_percentage=float(cand.get('deviation_pct', 0) or 0),
+                    ))
+
+                # Simple risk derivation
+                sev_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+                max_sev = max([sev_order.get(f.severity, 0) for f in findings], default=0)
+                overall = [k for k, v in sev_order.items() if v == max_sev][0] if findings else "low"
+                urgency = min(1.0, 0.2 + 0.2 * max_sev + 0.02 * len(findings))
+
+                # Basic recommendations
+                recs = []
+                if findings:
+                    recs.append(NetworkRecommendation(
+                        category="performance",
+                        priority="high" if max_sev >= 2 else "medium",
+                        title="Investigate recent metric anomalies",
+                        description="Review system and network metrics for spikes or drops. Correlate with deployments or traffic changes.",
+                        expected_impact="Stabilized performance and reduced incident risk",
+                        implementation_effort="medium",
+                    ))
+
+                analysis = AnomalyAnalysisResult(
+                    findings=findings,
+                    recommendations=recs,
+                    risk_assessment=RiskAssessment(
+                        overall_risk_level=overall,
+                        risk_factors=[f"Anomalies detected in {len(findings)} metrics"] if findings else [],
+                        potential_impacts=["Performance degradation", "Service instability"] if findings else [],
+                        urgency_score=urgency,
+                    ),
+                    summary=(
+                        f"Identified {len(findings)} anomaly candidates across key metrics. "
+                        "This is a heuristic summary generated without LLM."
+                    ),
+                    analysis_confidence=0.6 if findings else 0.9,
+                )
+
+                return {
+                    **state,
+                    "ai_analysis": analysis,
+                    "messages": state.get("messages", []) + [
+                        HumanMessage(content=f"Fallback analysis completed with {len(findings)} findings")
+                    ]
+                }
+            except Exception as inner:
+                logger.error(f"Fallback analysis also failed: {inner}")
+                return {**state, "error": str(e)}
     
     def _generate_recommendations(self, state: AnalysisState) -> Dict[str, Any]:
         """Generate final recommendations and store results"""

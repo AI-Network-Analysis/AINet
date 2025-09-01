@@ -60,7 +60,7 @@ ai:
   anomaly_detection:
     window_size: 100  # number of data points to analyze
     sensitivity: 0.8  # threshold for anomaly detection
-    min_samples: 20  # minimum samples before running detection
+    min_samples: 10  # minimum samples before running detection
 
 # Logging Configuration
 logging:

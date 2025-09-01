@@ -130,12 +130,25 @@ class AIEngineService:
                 
         except Exception as e:
             logger.error(f"Error in analyze_agent_anomalies: {e}")
-            return None
+            raise
         finally:
             self.analysis_in_progress.discard(agent_id)
     
-    async def analyze_all_agents(self, time_window_hours: int = 24) -> Dict[str, Any]:
-        """Run anomaly analysis for all active agents"""
+    async def analyze_all_agents(
+        self,
+        time_window_hours: int = 24,
+        *,
+        force_analysis: bool = False,
+        wait_if_in_progress: bool = False,
+    ) -> Dict[str, Any]:
+        """Run anomaly analysis for all active agents.
+
+        Args:
+            time_window_hours: Lookback window for metrics.
+            force_analysis: If True, bypass recent-analysis and in-progress checks.
+            wait_if_in_progress: If True and an analysis is already running for an agent,
+                wait until it finishes (up to a short timeout) instead of skipping.
+        """
         results = {
             "analyzed_agents": 0,
             "failed_analyses": 0,
@@ -159,11 +172,22 @@ class AIEngineService:
                 # Analyze agents in parallel (with limited concurrency)
                 semaphore = asyncio.Semaphore(3)  # Limit concurrent analyses
                 
+                async def _wait_for_slot(agent_id: int, timeout_seconds: int = 30):
+                    """Optionally wait for any ongoing analysis on this agent to finish."""
+                    if not wait_if_in_progress or force_analysis:
+                        return
+                    end_time = datetime.utcnow() + timedelta(seconds=timeout_seconds)
+                    while agent_id in self.analysis_in_progress and datetime.utcnow() < end_time:
+                        await asyncio.sleep(0.5)
+
                 async def analyze_single_agent(agent):
                     async with semaphore:
                         try:
+                            # Optionally wait if another analysis is in progress
+                            await _wait_for_slot(agent.id)
+
                             analysis = await self.analyze_agent_anomalies(
-                                agent.id, time_window_hours
+                                agent.id, time_window_hours, force_analysis=force_analysis
                             )
                             
                             if analysis:
@@ -184,11 +208,16 @@ class AIEngineService:
                                     "confidence": analysis.confidence_score
                                 })
                             else:
+                                # Improve skip reason when analysis is in progress
+                                reason = (
+                                    "analysis_in_progress" if agent.id in self.analysis_in_progress
+                                    else "insufficient_data_or_recent_analysis"
+                                )
                                 results["agent_results"].append({
                                     "agent_id": agent.id,
                                     "hostname": agent.hostname,
                                     "status": "skipped",
-                                    "reason": "insufficient_data_or_recent_analysis"
+                                    "reason": reason
                                 })
                         except Exception as e:
                             results["failed_analyses"] += 1

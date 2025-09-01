@@ -457,12 +457,25 @@ async def analyze_single_agent(
     agent_id: int,
     request: Request,
     time_window_hours: int = 24,
+    force: bool = False,
+    wait_if_in_progress: bool = False,
     db: Session = Depends(get_db)
 ):
     """Trigger AI anomaly analysis for a specific agent"""
     try:
         ai_service = request.app.state.ai_service
-        analysis = await ai_service.analyze_agent_anomalies(agent_id, time_window_hours)
+        # Optionally wait for current analysis to complete
+        if wait_if_in_progress and agent_id in ai_service.analysis_in_progress and not force:
+            # simple wait loop up to 30s
+            from datetime import datetime, timedelta
+            import asyncio as _asyncio
+            end_time = datetime.utcnow() + timedelta(seconds=30)
+            while agent_id in ai_service.analysis_in_progress and datetime.utcnow() < end_time:
+                await _asyncio.sleep(0.5)
+
+        analysis = await ai_service.analyze_agent_anomalies(
+            agent_id, time_window_hours, force_analysis=force
+        )
         if not analysis:
             raise HTTPException(status_code=400, detail="Analysis skipped or failed")
         return {"status": "completed", "analysis_id": analysis.id}
@@ -473,12 +486,16 @@ async def analyze_single_agent(
 @api_router.post("/analyze/all", response_model=Dict[str, Any])
 async def analyze_all_agents_endpoint(
     request: Request,
-    time_window_hours: int = 24
+    time_window_hours: int = 24,
+    force: bool = False,
+    wait_if_in_progress: bool = False
 ):
     """Trigger AI anomaly analysis for all active agents"""
     try:
         ai_service = request.app.state.ai_service
-        results = await ai_service.analyze_all_agents(time_window_hours)
+        results = await ai_service.analyze_all_agents(
+            time_window_hours, force_analysis=force, wait_if_in_progress=wait_if_in_progress
+        )
         return results
     except Exception as e:
         logger.error(f"Error analyzing all agents: {e}")
