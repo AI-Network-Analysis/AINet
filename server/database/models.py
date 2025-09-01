@@ -11,6 +11,10 @@ import json
 
 Base = declarative_base()
 
+def local_now():
+    """Return current local time instead of UTC"""
+    return datetime.now()
+
 class Agent(Base):
     """Agent registration and status"""
     __tablename__ = "agents"
@@ -20,8 +24,8 @@ class Agent(Base):
     ip_address = Column(String(45))  # Support IPv6
     mac_address = Column(String(17))
     agent_version = Column(String(50))
-    first_seen = Column(DateTime, default=datetime.utcnow)
-    last_seen = Column(DateTime, default=datetime.utcnow)
+    first_seen = Column(DateTime, default=local_now)
+    last_seen = Column(DateTime, default=local_now)
     status = Column(String(20), default="active")  # active, inactive, error
     agent_metadata = Column(JSON)
     
@@ -85,7 +89,7 @@ class Alert(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=local_now, index=True)
     
     # Alert information
     alert_type = Column(String(50), nullable=False)  # anomaly, threshold, system_error
@@ -116,7 +120,7 @@ class AIAnalysis(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=local_now, index=True)
     
     # Analysis information
     analysis_type = Column(String(50))  # anomaly_detection, trend_analysis, prediction
@@ -143,8 +147,8 @@ class SystemConfig(Base):
     key = Column(String(100), unique=True, nullable=False, index=True)
     value = Column(JSON)
     description = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=local_now)
+    updated_at = Column(DateTime, default=local_now, onupdate=local_now)
 
 class ApiKey(Base):
     """API keys for agent authentication"""
@@ -153,7 +157,7 @@ class ApiKey(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     key_hash = Column(String(255), nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=local_now)
     expires_at = Column(DateTime)
     is_active = Column(Boolean, default=True)
     permissions = Column(JSON)  # List of allowed operations

@@ -1142,9 +1142,8 @@
             const card = document.createElement('div');
             card.className = `agent-card ${!agent.is_online ? 'offline' : ''}`;
             
-            // Convert UTC to local time
-            const lastSeenUTC = new Date(agent.last_seen + 'Z');
-            const lastSeen = lastSeenUTC.toLocaleString();
+            // Timestamp is already in local time, just format it
+            const lastSeen = new Date(agent.last_seen).toLocaleString();
             const onlineStatus = agent.is_online ? 'Online' : 'Offline';
             const statusClass = agent.is_online ? 'online' : 'offline';
             
@@ -1203,8 +1202,7 @@
             alertDiv.className = `alert-item ${alert.severity}`;
             
             // Convert UTC to local time
-            const timestampUTC = new Date(alert.timestamp + 'Z');
-            const timestamp = timestampUTC.toLocaleString();
+            const timestamp = new Date(alert.timestamp).toLocaleString();
             
             alertDiv.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
@@ -1813,9 +1811,8 @@
             
             card.className = cardClass;
             
-            // Convert UTC timestamp to local time
-            const utcTimestamp = new Date(result.timestamp + 'Z'); // Add Z to indicate UTC
-            const localTimestamp = utcTimestamp.toLocaleString();
+            // Timestamp is already in local time, just format it
+            const localTimestamp = new Date(result.timestamp).toLocaleString();
             const confidenceScore = result.confidence_score ? (result.confidence_score * 100).toFixed(1) : 'N/A';
             
             card.innerHTML = `

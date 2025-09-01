@@ -16,6 +16,10 @@ from ..database.connection import get_db_manager
 
 logger = logging.getLogger(__name__)
 
+def local_now():
+    """Return current local time instead of UTC"""
+    return datetime.now()
+
 class AIEngineService:
     """Service for AI-powered network analysis"""
     
@@ -49,7 +53,8 @@ class AIEngineService:
                     return None
                 
                 # Get metrics for analysis
-                since_time = datetime.utcnow() - timedelta(hours=time_window_hours)
+                # Get recent metrics for analysis
+                since_time = local_now() - timedelta(hours=time_window_hours)
                 metrics = db.query(NetworkMetric).filter(
                     NetworkMetric.agent_id == agent_id,
                     NetworkMetric.timestamp >= since_time
@@ -67,7 +72,7 @@ class AIEngineService:
                 # Create AI analysis record
                 ai_analysis = AIAnalysis(
                     agent_id=agent_id,
-                    timestamp=datetime.utcnow(),
+                    timestamp=local_now(),
                     analysis_type="anomaly_detection",
                     model_used=self.config.get('ai', {}).get('model_name', 'gpt-4'),
                     status="pending",
@@ -76,7 +81,7 @@ class AIEngineService:
                 db.add(ai_analysis)
                 db.commit()
                 
-                start_time = datetime.utcnow()
+                start_time = local_now()
                 
                 try:
                     # Run anomaly detection
@@ -87,7 +92,7 @@ class AIEngineService:
                     )
                     
                     # Calculate processing time
-                    processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                    processing_time = (local_now() - start_time).total_seconds() * 1000
                     
                     # Update AI analysis record
                     ai_analysis.confidence_score = analysis_result.analysis_confidence
@@ -112,7 +117,7 @@ class AIEngineService:
                 except Exception as e:
                     logger.error(f"Error during AI analysis for agent {agent_id}: {e}")
                     ai_analysis.status = "failed"
-                    ai_analysis.processing_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+                    ai_analysis.processing_time_ms = int((local_now() - start_time).total_seconds() * 1000)
                     db.commit()
                     raise
                 
@@ -141,7 +146,7 @@ class AIEngineService:
             "analyzed_agents": 0,
             "failed_analyses": 0,
             "total_alerts": 0,
-            "start_time": datetime.utcnow(),
+            "start_time": local_now(),
             "agent_results": []
         }
         
@@ -149,7 +154,7 @@ class AIEngineService:
             db_manager = get_db_manager()
             with db_manager.get_session() as db:
                 # Get active agents (last seen within 1 hour)
-                cutoff_time = datetime.utcnow() - timedelta(hours=1)
+                cutoff_time = local_now() - timedelta(hours=1)
                 agents = db.query(Agent).filter(
                     Agent.last_seen >= cutoff_time,
                     Agent.status == "active"
@@ -164,8 +169,8 @@ class AIEngineService:
                     """Optionally wait for any ongoing analysis on this agent to finish."""
                     if not wait_if_in_progress or force_analysis:
                         return
-                    end_time = datetime.utcnow() + timedelta(seconds=timeout_seconds)
-                    while agent_id in self.analysis_in_progress and datetime.utcnow() < end_time:
+                    end_time = local_now() + timedelta(seconds=timeout_seconds)
+                    while agent_id in self.analysis_in_progress and local_now() < end_time:
                         await asyncio.sleep(0.5)
 
                 async def analyze_single_agent(agent):
@@ -220,7 +225,7 @@ class AIEngineService:
                 # Run analyses
                 await asyncio.gather(*[analyze_single_agent(agent) for agent in agents])
                 
-                results["end_time"] = datetime.utcnow()
+                results["end_time"] = local_now()
                 results["duration_seconds"] = (results["end_time"] - results["start_time"]).total_seconds()
                 
                 logger.info(f"Batch analysis completed: {results['analyzed_agents']} analyzed, "
@@ -259,7 +264,7 @@ class AIEngineService:
             with db_manager.get_session() as db:
                 # Get recent alerts
                 recent_alerts = db.query(Alert).filter(
-                    Alert.timestamp >= datetime.utcnow() - timedelta(hours=24),
+                    Alert.timestamp >= local_now() - timedelta(hours=24),
                     Alert.status == "active"
                 ).all()
                 
@@ -276,19 +281,19 @@ class AIEngineService:
                 
                 # Get active agents
                 active_agents = db.query(Agent).filter(
-                    Agent.last_seen >= datetime.utcnow() - timedelta(hours=1)
+                    Agent.last_seen >= local_now() - timedelta(hours=1)
                 ).count()
                 
                 # Get recent analyses
                 recent_analyses = db.query(AIAnalysis).filter(
-                    AIAnalysis.timestamp >= datetime.utcnow() - timedelta(hours=24)
+                    AIAnalysis.timestamp >= local_now() - timedelta(hours=24)
                 ).count()
                 
                 # Calculate overall health score
                 health_score = self._calculate_health_score(alert_counts, active_agents)
                 
                 return {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": local_now().isoformat(),
                     "health_score": health_score,
                     "active_agents": active_agents,
                     "recent_analyses": recent_analyses,
@@ -301,7 +306,7 @@ class AIEngineService:
             logger.error(f"Error getting system health overview: {e}")
             return {
                 "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": local_now().isoformat()
             }
     
     # Helper methods
@@ -331,7 +336,7 @@ class AIEngineService:
             if finding.severity in ["medium", "high", "critical"]:
                 alert = Alert(
                     agent_id=agent_id,
-                    timestamp=datetime.utcnow(),
+                    timestamp=local_now(),
                     alert_type="anomaly",
                     severity=finding.severity,
                     title=f"Anomaly detected in {finding.metric_name}",

@@ -9,6 +9,10 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, TypedDict, Annotated
 import asyncio
 
+def local_now():
+    """Return current local time instead of UTC"""
+    return datetime.now()
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -74,7 +78,7 @@ def get_system_status() -> Dict[str, Any]:
             "status": "healthy" if db_healthy else "unhealthy",
             "database": "connected" if db_healthy else "disconnected",
             "ai_engine": "running",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": local_now().isoformat(),
             "message": "System is operational" if db_healthy else "System has issues"
         }
     except Exception as e:
@@ -98,7 +102,7 @@ def get_agents_status() -> AgentStatusResponse:
             
             for agent in agents:
                 # Consider agent online if last seen within 5 minutes
-                is_online = (datetime.utcnow() - agent.last_seen).total_seconds() < 300
+                is_online = (local_now() - agent.last_seen).total_seconds() < 300
                 
                 if is_online:
                     online_agents += 1
@@ -151,7 +155,7 @@ def get_agent_metrics(agent_hostname: str, hours: int = 24) -> MetricsResponse:
                 )
             
             # Get recent metrics
-            since_time = datetime.utcnow() - timedelta(hours=hours)
+            since_time = local_now() - timedelta(hours=hours)
             metrics = db.query(NetworkMetric).filter(
                 NetworkMetric.agent_id == agent.id,
                 NetworkMetric.timestamp >= since_time
@@ -205,7 +209,7 @@ def get_recent_alerts(hours: int = 24, severity: Optional[str] = None) -> Alerts
         db_manager = get_db_manager()
         with db_manager.get_session() as db:
             # Build query
-            since_time = datetime.utcnow() - timedelta(hours=hours)
+            since_time = local_now() - timedelta(hours=hours)
             query = db.query(Alert).filter(Alert.timestamp >= since_time)
             
             if severity:
