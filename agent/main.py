@@ -11,6 +11,7 @@ import os
 import yaml
 import logging
 import socket
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -132,9 +133,11 @@ class NetworkAgent:
         try:
             logger.debug("Starting metrics collection cycle...")
             
-            # Collect metrics
-            metrics = self.metrics_collector.collect_all_metrics()
-            metrics_dict = self.metrics_collector.to_dict(metrics)
+            # Collect metrics using enhanced collector
+            raw_metrics = self.metrics_collector.collect_all_metrics()
+            
+            # Transform to server-compatible format
+            metrics_dict = self.transform_metrics_for_server(raw_metrics)
             
             # Send metrics
             success = await self.data_sender.send_metrics(metrics_dict)
@@ -146,6 +149,105 @@ class NetworkAgent:
                 
         except Exception as e:
             logger.error(f"Error in collection cycle: {e}")
+
+    def transform_metrics_for_server(self, raw_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform enhanced metrics format to server-compatible format."""
+        try:
+            # Convert timestamp to string
+            timestamp = str(raw_metrics.get('timestamp', time.time()))
+            
+            # Transform interfaces from list to dict format
+            interfaces_dict = {}
+            for interface_data in raw_metrics.get('interfaces', []):
+                if isinstance(interface_data, dict) and 'interface' in interface_data:
+                    iface_name = interface_data['interface']
+                    stats = interface_data.get('statistics', {})
+                    interfaces_dict[iface_name] = {
+                        'bytes_sent': stats.get('bytes_sent', 0),
+                        'bytes_recv': stats.get('bytes_recv', 0),
+                        'packets_sent': stats.get('packets_sent', 0),
+                        'packets_recv': stats.get('packets_recv', 0),
+                        'errors_in': stats.get('errin', 0),
+                        'errors_out': stats.get('errout', 0),
+                        'drops_in': stats.get('dropin', 0),
+                        'drops_out': stats.get('dropout', 0)
+                    }
+            
+            # Transform connections from list to simple counts
+            connections_list = raw_metrics.get('connections', [])
+            connections_dict = {
+                'total': len(connections_list),
+                'tcp': len([c for c in connections_list if c.get('type') == 'SOCK_STREAM']),
+                'udp': len([c for c in connections_list if c.get('type') == 'SOCK_DGRAM']),
+                'established': len([c for c in connections_list if c.get('status') == 'ESTABLISHED'])
+            }
+            
+            # Create bandwidth metrics from interface data
+            bandwidth_dict = {}
+            for iface_name, stats in interfaces_dict.items():
+                bandwidth_dict[iface_name] = {
+                    'bytes_sent': stats.get('bytes_sent', 0),
+                    'bytes_recv': stats.get('bytes_recv', 0)
+                }
+            
+            # Transform system info to system metrics
+            sys_info = raw_metrics.get('system_info', {})
+            system_metrics = {
+                'cpu_percent': sys_info.get('cpu_percent', 0.0),
+                'memory_percent': sys_info.get('memory_percent', 0.0),
+                'disk_percent': sys_info.get('disk_usage', 0.0),
+                'uptime': sys_info.get('uptime', 0.0),
+                'load_1min': sys_info.get('load_average', {}).get('1min', 0.0),
+                'load_5min': sys_info.get('load_average', {}).get('5min', 0.0),
+                'load_15min': sys_info.get('load_average', {}).get('15min', 0.0)
+            }
+            
+            # Create basic latency metrics (placeholder for now)
+            latency_metrics = {
+                'avg_ping': 0.0,
+                'max_ping': 0.0,
+                'min_ping': 0.0
+            }
+            
+            # Create packet stats from interface data
+            packet_stats = {}
+            for iface_name, stats in interfaces_dict.items():
+                packet_stats[iface_name] = {
+                    'packets_sent': stats.get('packets_sent', 0),
+                    'packets_recv': stats.get('packets_recv', 0),
+                    'errors_in': stats.get('errors_in', 0),
+                    'errors_out': stats.get('errors_out', 0),
+                    'drops_in': stats.get('drops_in', 0),
+                    'drops_out': stats.get('drops_out', 0)
+                }
+            
+            # Build server-compatible metrics
+            server_metrics = {
+                'timestamp': timestamp,
+                'hostname': self.agent_info['hostname'],
+                'interfaces': interfaces_dict,
+                'connections': connections_dict,
+                'bandwidth': bandwidth_dict,
+                'system_metrics': system_metrics,
+                'latency_metrics': latency_metrics,
+                'packet_stats': packet_stats
+            }
+            
+            return server_metrics
+            
+        except Exception as e:
+            logger.error(f"Error transforming metrics: {e}")
+            # Return minimal valid structure
+            return {
+                'timestamp': str(time.time()),
+                'hostname': self.agent_info['hostname'],
+                'interfaces': {},
+                'connections': {'total': 0},
+                'bandwidth': {},
+                'system_metrics': {'cpu_percent': 0.0, 'memory_percent': 0.0, 'disk_percent': 0.0},
+                'latency_metrics': {'avg_ping': 0.0},
+                'packet_stats': {}
+            }
     
     async def run_heartbeat_cycle(self):
         """Send heartbeat to server"""
