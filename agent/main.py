@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from network_monitor.metrics_collector import MetricsCollector
+from network_monitor.metrics_collector import EnhancedMetricsCollector
 from data_collector.sender import DataSender
 
 # Configure logging
@@ -110,7 +110,7 @@ class NetworkAgent:
         self._setup_logging()
         
         # Initialize metrics collector
-        self.metrics_collector = MetricsCollector(self.config)
+        self.metrics_collector = EnhancedMetricsCollector()
         logger.info("Metrics collector initialized")
         
         # Initialize data sender
