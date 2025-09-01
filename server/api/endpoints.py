@@ -500,3 +500,96 @@ async def analyze_all_agents_endpoint(
     except Exception as e:
         logger.error(f"Error analyzing all agents: {e}")
         raise HTTPException(status_code=500, detail="Batch analysis failed")
+
+@api_router.get("/analysis", response_model=List[Dict[str, Any]])
+async def get_analysis_results(
+    limit: int = 10,
+    agent_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Get recent AI analysis results"""
+    try:
+        from ..database.models import AIAnalysis
+        
+        query = db.query(AIAnalysis)
+        
+        if agent_id:
+            query = query.filter(AIAnalysis.agent_id == agent_id)
+        
+        analyses = query.order_by(AIAnalysis.timestamp.desc()).limit(limit).all()
+        
+        results = []
+        for analysis in analyses:
+            # Get agent hostname
+            agent = db.query(Agent).filter(Agent.id == analysis.agent_id).first()
+            agent_hostname = agent.hostname if agent else f"Agent {analysis.agent_id}"
+            
+            result = {
+                "id": analysis.id,
+                "agent_id": analysis.agent_id,
+                "agent_hostname": agent_hostname,
+                "timestamp": analysis.timestamp,
+                "analysis_type": analysis.analysis_type,
+                "model_used": analysis.model_used,
+                "confidence_score": analysis.confidence_score,
+                "findings": analysis.findings,
+                "recommendations": analysis.recommendations,
+                "risk_assessment": analysis.risk_assessment,
+                "processing_time_ms": analysis.processing_time_ms,
+                "data_points_analyzed": analysis.data_points_analyzed,
+                "status": analysis.status
+            }
+            results.append(result)
+        
+        return results
+    except Exception as e:
+        logger.error(f"Error retrieving analysis results: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve analysis results"
+        )
+
+@api_router.get("/analysis/{analysis_id}", response_model=Dict[str, Any])
+async def get_analysis_result(
+    analysis_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get specific AI analysis result by ID"""
+    try:
+        from ..database.models import AIAnalysis
+        
+        analysis = db.query(AIAnalysis).filter(AIAnalysis.id == analysis_id).first()
+        
+        if not analysis:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Analysis result not found"
+            )
+        
+        # Get agent hostname
+        agent = db.query(Agent).filter(Agent.id == analysis.agent_id).first()
+        agent_hostname = agent.hostname if agent else f"Agent {analysis.agent_id}"
+        
+        return {
+            "id": analysis.id,
+            "agent_id": analysis.agent_id,
+            "agent_hostname": agent_hostname,
+            "timestamp": analysis.timestamp,
+            "analysis_type": analysis.analysis_type,
+            "model_used": analysis.model_used,
+            "confidence_score": analysis.confidence_score,
+            "findings": analysis.findings,
+            "recommendations": analysis.recommendations,
+            "risk_assessment": analysis.risk_assessment,
+            "processing_time_ms": analysis.processing_time_ms,
+            "data_points_analyzed": analysis.data_points_analyzed,
+            "status": analysis.status
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving analysis result {analysis_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve analysis result"
+        )
