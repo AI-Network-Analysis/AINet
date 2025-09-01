@@ -316,6 +316,59 @@ def get_analysis_results(limit: int = 5, agent_hostname: Optional[str] = None) -
         )
 
 @tool
+def get_analysis_details(analysis_id: int) -> Dict[str, Any]:
+    """Get detailed information about a specific AI analysis by ID.
+    
+    Args:
+        analysis_id: The ID of the analysis to retrieve details for
+    """
+    try:
+        db_manager = get_db_manager()
+        with db_manager.get_session() as db:
+            # Find the analysis
+            analysis = db.query(AIAnalysis).filter(AIAnalysis.id == analysis_id).first()
+            if not analysis:
+                return {
+                    "success": False,
+                    "message": f"Analysis with ID {analysis_id} not found"
+                }
+            
+            # Get agent hostname
+            agent = db.query(Agent).filter(Agent.id == analysis.agent_id).first()
+            agent_hostname = agent.hostname if agent else f"Agent {analysis.agent_id}"
+            
+            # Format detailed analysis information
+            details = {
+                "id": analysis.id,
+                "agent_hostname": agent_hostname,
+                "agent_id": analysis.agent_id,
+                "timestamp": analysis.timestamp.isoformat(),
+                "analysis_type": analysis.analysis_type,
+                "model_used": analysis.model_used,
+                "confidence_score": analysis.confidence_score,
+                "status": analysis.status,
+                "processing_time_ms": analysis.processing_time_ms,
+                "data_points_analyzed": analysis.data_points_analyzed,
+                "findings": analysis.findings or [],
+                "recommendations": analysis.recommendations or [],
+                "risk_assessment": analysis.risk_assessment or {},
+                "findings_count": len(analysis.findings) if analysis.findings else 0,
+                "recommendations_count": len(analysis.recommendations) if analysis.recommendations else 0
+            }
+            
+            return {
+                "success": True,
+                "analysis": details
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting analysis details for ID {analysis_id}: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to get analysis details: {str(e)}"
+        }
+
+@tool
 def trigger_agent_analysis(agent_hostname: str, time_window_hours: int = 24) -> Dict[str, Any]:
     """Trigger AI analysis for a specific agent.
     
@@ -371,6 +424,7 @@ class AINetChatAgent:
             get_agent_metrics,
             get_recent_alerts,
             get_analysis_results,
+            get_analysis_details,
             trigger_agent_analysis
         ]
         
@@ -415,6 +469,7 @@ You are an AI assistant for the AINet network monitoring system. You have access
 - Network metrics and performance data
 - Security alerts and anomalies
 - AI analysis results and insights
+- Detailed analysis information by ID
 - Ability to trigger new analyses
 
 You can help users:
@@ -422,10 +477,13 @@ You can help users:
 2. Analyze network performance and metrics
 3. Investigate alerts and anomalies
 4. Review AI analysis results
-5. Trigger new analyses when needed
-6. Provide insights and recommendations
+5. Get detailed information about specific analyses by ID
+6. Trigger new analyses when needed
+7. Provide insights and recommendations
 
 When using tools, explain what you're doing and interpret the results in a helpful way. Always provide context and actionable insights based on the data you retrieve.
+
+When a user asks about a specific analysis or wants more details about an analysis, use the get_analysis_details tool with the analysis ID to provide comprehensive information including findings, recommendations, and risk assessments.
 
 Be conversational but professional. If asked about capabilities outside of network monitoring, politely redirect to your core functions.
         """)
