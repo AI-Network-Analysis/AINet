@@ -371,7 +371,7 @@ def get_analysis_details(analysis_id: int) -> Dict[str, Any]:
 
 @tool
 def trigger_agent_analysis(agent_hostname: str, time_window_hours: int = 24) -> Dict[str, Any]:
-    """Trigger AI analysis for a specific agent.
+    """Trigger AI analysis for a specific agent and wait for completion.
     
     Args:
         agent_hostname: The hostname of the agent to analyze
@@ -388,14 +388,103 @@ def trigger_agent_analysis(agent_hostname: str, time_window_hours: int = 24) -> 
                     "message": f"Agent '{agent_hostname}' not found"
                 }
             
-            # Note: In a real implementation, you'd trigger the actual analysis here
-            # For now, we'll return a placeholder response
+            # Get the AI service - we need to import and initialize it
+            from server.ai_engine.service import AIEngineService
+            from pathlib import Path
+            
+            # Load config from the chat agent's config if available
+            # or use default config
+            config = {
+                'ai': {
+                    'model_name': 'gemini-2.5-flash',
+                    'temperature': 0.1
+                },
+                'anomaly_detection': {
+                    'min_samples': 10,
+                    'window_size': 24
+                }
+            }
+            
+            # Try to load actual config
+            try:
+                import yaml
+                config_path = Path(__file__).parent.parent.parent / 'config' / 'config.yaml'
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        loaded_config = yaml.safe_load(f)
+                        if loaded_config:
+                            config.update(loaded_config)
+            except Exception as e:
+                logger.warning(f"Could not load config file, using defaults: {e}")
+            
+            # Initialize AI service
+            ai_service = AIEngineService(config)
+            
+            # Trigger the analysis and wait for completion
+            logger.info(f"Starting AI analysis for agent {agent_hostname} (ID: {agent.id})")
+            
+            # Run the async analysis in the current event loop
+            import asyncio
+            
+            try:
+                # Get the current event loop, or create a new one if none exists
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we need to use a different approach
+                    # Create a new task and use asyncio.create_task
+                    analysis = loop.run_until_complete(
+                        ai_service.analyze_agent_anomalies(
+                            agent.id, 
+                            time_window_hours, 
+                            force_analysis=True
+                        )
+                    )
+                else:
+                    analysis = asyncio.run(
+                        ai_service.analyze_agent_anomalies(
+                            agent.id, 
+                            time_window_hours, 
+                            force_analysis=True
+                        )
+                    )
+            except RuntimeError:
+                # If there's already an event loop running, use asyncio.create_task approach
+                # This is a workaround for nested async calls
+                import concurrent.futures
+                
+                async def run_analysis():
+                    return await ai_service.analyze_agent_anomalies(
+                        agent.id, 
+                        time_window_hours, 
+                        force_analysis=True
+                    )
+                
+                # Use ThreadPoolExecutor as a fallback
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, run_analysis())
+                    analysis = future.result(timeout=300)  # 5 minute timeout
+            
+            if not analysis:
+                return {
+                    "success": False,
+                    "message": f"Analysis could not be completed for agent '{agent_hostname}'. This may be due to insufficient data or the agent being offline."
+                }
+            
+            # Return detailed results
             return {
                 "success": True,
-                "message": f"Analysis triggered for agent '{agent_hostname}'",
+                "message": f"AI analysis completed for agent '{agent_hostname}'",
+                "analysis_id": analysis.id,
                 "agent_id": agent.id,
+                "agent_hostname": agent_hostname,
                 "time_window_hours": time_window_hours,
-                "note": "Analysis will complete shortly. Check the Analysis Results tab for updates."
+                "status": analysis.status,
+                "confidence_score": analysis.confidence_score,
+                "processing_time_ms": analysis.processing_time_ms,
+                "data_points_analyzed": analysis.data_points_analyzed,
+                "findings_count": len(analysis.findings) if analysis.findings else 0,
+                "recommendations_count": len(analysis.recommendations) if analysis.recommendations else 0,
+                "completion_time": analysis.timestamp.isoformat()
             }
     except Exception as e:
         logger.error(f"Error triggering analysis for {agent_hostname}: {e}")
@@ -491,11 +580,18 @@ You can help users:
 6. Trigger new analyses when needed
 7. Provide insights and recommendations
 
-When using tools, explain what you're doing and interpret the results in a helpful way. Always provide context and actionable insights based on the data you retrieve.
+IMPORTANT GUIDELINES:
+- When using tools, always explain what you're doing first (e.g., "Let me check the system status..." or "I'll trigger an analysis for that agent...")
+- After receiving tool results, ALWAYS interpret and summarize the key findings for the user
+- For the trigger_agent_analysis tool specifically, explain that the analysis is running and provide a summary of the results when complete
+- When analysis is triggered successfully, inform the user about the analysis ID and key metrics like confidence score, findings count, etc.
+- If a tool returns an error or no data, explain what this means and suggest alternative actions
+- Always provide context and actionable insights based on the data you retrieve
+- Be conversational but professional and informative
 
 When a user asks about a specific analysis or wants more details about an analysis, use the get_analysis_details tool with the analysis ID to provide comprehensive information including findings, recommendations, and risk assessments.
 
-Be conversational but professional. If asked about capabilities outside of network monitoring, politely redirect to your core functions.
+If asked about capabilities outside of network monitoring, politely redirect to your core functions.
         """)
         
         messages = [system_message] + state["messages"]
@@ -548,15 +644,33 @@ Be conversational but professional. If asked about capabilities outside of netwo
             # Extract response and tool calls
             final_message = result["messages"][-1]
             
-            # Extract tool calls that occurred during the conversation
+            # Extract tool calls and their results that occurred during the conversation
             tool_calls = []
-            for msg in result["messages"]:
+            for i, msg in enumerate(result["messages"]):
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
                     for tool_call in msg.tool_calls:
+                        # Look for the corresponding tool result in the next messages
+                        tool_result = None
+                        for j in range(i + 1, len(result["messages"])):
+                            next_msg = result["messages"][j]
+                            if hasattr(next_msg, 'tool_call_id') and next_msg.tool_call_id == tool_call["id"]:
+                                tool_result = next_msg.content
+                                break
+                            elif hasattr(next_msg, 'content') and isinstance(next_msg.content, str):
+                                # For ToolMessage, check if it corresponds to this tool call
+                                try:
+                                    from langchain_core.messages import ToolMessage
+                                    if isinstance(next_msg, ToolMessage) and hasattr(next_msg, 'tool_call_id') and next_msg.tool_call_id == tool_call["id"]:
+                                        tool_result = next_msg.content
+                                        break
+                                except:
+                                    pass
+                        
                         tool_calls.append({
                             "name": tool_call["name"],
                             "args": tool_call["args"],
-                            "id": tool_call["id"]
+                            "id": tool_call["id"],
+                            "result": tool_result
                         })
             
             # Update conversation cache
