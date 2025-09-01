@@ -163,10 +163,22 @@ def create_app(config: dict) -> FastAPI:
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     
-    # Dashboard route (placeholder)
+    # Dashboard route
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard():
-        """Simple dashboard placeholder"""
+        """Enhanced AI-powered dashboard"""
+        templates_dir = Path(__file__).parent.parent / "dashboard" / "templates"
+        
+        # If template exists, serve it
+        if (templates_dir / "dashboard.html").exists():
+            try:
+                with open(templates_dir / "dashboard.html", "r") as f:
+                    html_content = f.read()
+                return HTMLResponse(content=html_content)
+            except Exception as e:
+                logger.error(f"Error loading dashboard template: {e}")
+        
+        # Fallback to simple dashboard
         html_content = """
         <!DOCTYPE html>
         <html>
@@ -211,8 +223,8 @@ def create_app(config: dict) -> FastAPI:
                     <li>✅ Network Metrics Collection</li>
                     <li>✅ Data Storage & Retrieval</li>
                     <li>✅ AI Anomaly Detection</li>
-                    <li>🔄 Real-time Dashboard (In Progress)</li>
-                    <li>🔄 Alert Management (In Progress)</li>
+                    <li>✅ Real-time Dashboard</li>
+                    <li>✅ Interactive AI Analysis</li>
                 </ul>
             </div>
             
@@ -221,7 +233,7 @@ def create_app(config: dict) -> FastAPI:
                 <p>1. Deploy agents on your Linux machines</p>
                 <p>2. Configure agents to connect to this server</p>
                 <p>3. Monitor network metrics and anomalies</p>
-                <p>4. Set up alerts and notifications</p>
+                <p>4. Use the dashboard to analyze data with AI</p>
             </div>
         </body>
         </html>

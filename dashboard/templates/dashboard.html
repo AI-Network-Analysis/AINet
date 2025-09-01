@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AINet Dashboard - Network Monitoring & AI Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header .subtitle {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h3 {
+            color: #2c3e50;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        .status-indicator.online {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+        }
+
+        .status-indicator.offline {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .status-indicator.warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .button.danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .button.success {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+        }
+
+        .button.warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .metric-item:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: #34495e;
+        }
+
+        .metric-value {
+            font-weight: 700;
+            font-size: 1.1em;
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .agent-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 20px;
+            border-left: 5px solid #3498db;
+            transition: all 0.3s ease;
+        }
+
+        .agent-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .agent-card.offline {
+            border-left-color: #e74c3c;
+            opacity: 0.7;
+        }
+
+        .alert-item {
+            background: rgba(231, 76, 60, 0.1);
+            border-left: 4px solid #e74c3c;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .alert-item.medium {
+            background: rgba(243, 156, 18, 0.1);
+            border-left-color: #f39c12;
+        }
+
+        .alert-item.low {
+            background: rgba(52, 152, 219, 0.1);
+            border-left-color: #3498db;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+
+        .refresh-time {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        .analysis-results {
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .analysis-results.error {
+            background: rgba(231, 76, 60, 0.1);
+            border-color: rgba(231, 76, 60, 0.3);
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2ecc71;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast.error {
+            background: #e74c3c;
+        }
+
+        .tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px 25px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: #7f8c8d;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-network-wired"></i>
+                AINet Dashboard
+            </h1>
+            <p class="subtitle">AI-powered network monitoring and anomaly detection system</p>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('overview')">
+                <i class="fas fa-tachometer-alt"></i> Overview
+            </button>
+            <button class="tab" onclick="switchTab('agents')">
+                <i class="fas fa-desktop"></i> Agents
+            </button>
+            <button class="tab" onclick="switchTab('analysis')">
+                <i class="fas fa-brain"></i> AI Analysis
+            </button>
+            <button class="tab" onclick="switchTab('alerts')">
+                <i class="fas fa-exclamation-triangle"></i> Alerts
+            </button>
+            <button class="tab" onclick="switchTab('metrics')">
+                <i class="fas fa-chart-line"></i> Metrics
+            </button>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="dashboard-grid">
+                <!-- System Status -->
+                <div class="card">
+                    <h3><i class="fas fa-server"></i> System Status</h3>
+                    <div id="system-status">
+                        <div class="metric-item">
+                            <span class="metric-label">Server</span>
+                            <span id="server-status" class="status-indicator online">
+                                <i class="fas fa-circle"></i> Online
+                            </span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Database</span>
+                            <span id="database-status" class="status-indicator online">
+                                <i class="fas fa-circle"></i> Connected
+                            </span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">AI Engine</span>
+                            <span id="ai-status" class="status-indicator online">
+                                <i class="fas fa-circle"></i> Running
+                            </span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Uptime</span>
+                            <span id="uptime" class="metric-value">N/A</span>
+                        </div>
+                    </div>
+                    <button class="button" onclick="refreshSystemStatus()">
+                        <i class="fas fa-sync-alt"></i> Refresh Status
+                    </button>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="card">
+                    <h3><i class="fas fa-chart-bar"></i> Quick Stats</h3>
+                    <div id="quick-stats">
+                        <div class="metric-item">
+                            <span class="metric-label">Total Agents</span>
+                            <span id="total-agents" class="metric-value">0</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Online Agents</span>
+                            <span id="online-agents" class="metric-value">0</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Active Alerts</span>
+                            <span id="active-alerts" class="metric-value">0</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Last Analysis</span>
+                            <span id="last-analysis" class="metric-value">Never</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card">
+                    <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                    <div style="text-align: center;">
+                        <button class="button success" onclick="triggerFullAnalysis()">
+                            <i class="fas fa-brain"></i> Run Full AI Analysis
+                        </button>
+                        <button class="button" onclick="refreshAllData()">
+                            <i class="fas fa-sync-alt"></i> Refresh All Data
+                        </button>
+                        <button class="button warning" onclick="exportData()">
+                            <i class="fas fa-download"></i> Export Data
+                        </button>
+                    </div>
+                    <div id="quick-action-results" class="analysis-results"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agents Tab -->
+        <div id="agents" class="tab-content">
+            <div class="card">
+                <h3><i class="fas fa-desktop"></i> Connected Agents</h3>
+                <button class="button" onclick="refreshAgents()">
+                    <i class="fas fa-sync-alt"></i> Refresh Agents
+                </button>
+                <div id="agents-container" class="agents-grid">
+                    <!-- Agents will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Analysis Tab -->
+        <div id="analysis" class="tab-content">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3><i class="fas fa-brain"></i> AI Analysis Controls</h3>
+                    <div style="margin-bottom: 20px;">
+                        <label for="time-window">Time Window (hours):</label>
+                        <select id="time-window" style="margin-left: 10px; padding: 5px;">
+                            <option value="1">1 hour</option>
+                            <option value="6">6 hours</option>
+                            <option value="24" selected>24 hours</option>
+                            <option value="72">3 days</option>
+                            <option value="168">1 week</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label>
+                            <input type="checkbox" id="force-analysis"> Force analysis (ignore cache)
+                        </label>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label>
+                            <input type="checkbox" id="wait-analysis" checked> Wait if analysis in progress
+                        </label>
+                    </div>
+                    <button class="button success" onclick="triggerAnalysisForAll()">
+                        <i class="fas fa-brain"></i> Analyze All Agents
+                    </button>
+                    <div id="analysis-results-all" class="analysis-results"></div>
+                </div>
+
+                <div class="card">
+                    <h3><i class="fas fa-microscope"></i> Individual Agent Analysis</h3>
+                    <div style="margin-bottom: 20px;">
+                        <label for="agent-select">Select Agent:</label>
+                        <select id="agent-select" style="margin-left: 10px; padding: 5px; width: 200px;">
+                            <option value="">Select an agent...</option>
+                        </select>
+                    </div>
+                    <button class="button" onclick="triggerAnalysisForAgent()" id="analyze-agent-btn" disabled>
+                        <i class="fas fa-search"></i> Analyze Selected Agent
+                    </button>
+                    <div id="analysis-results-agent" class="analysis-results"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Tab -->
+        <div id="alerts" class="tab-content">
+            <div class="card">
+                <h3><i class="fas fa-exclamation-triangle"></i> Recent Alerts</h3>
+                <button class="button" onclick="refreshAlerts()">
+                    <i class="fas fa-sync-alt"></i> Refresh Alerts
+                </button>
+                <div id="alerts-container">
+                    <!-- Alerts will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Tab -->
+        <div id="metrics" class="tab-content">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h3><i class="fas fa-chart-line"></i> System Metrics Overview</h3>
+                    <div class="chart-container">
+                        <canvas id="metrics-chart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3><i class="fas fa-network-wired"></i> Network Statistics</h3>
+                    <div class="chart-container">
+                        <canvas id="network-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="refresh-time" id="last-refresh">
+            Last updated: Never
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'overview';
+        let refreshInterval;
+        let metricsChart, networkChart;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeDashboard();
+            startAutoRefresh();
+        });
+
+        function initializeDashboard() {
+            refreshSystemStatus();
+            refreshAgents();
+            refreshAlerts();
+            loadQuickStats();
+            initializeCharts();
+        }
+
+        function startAutoRefresh() {
+            // Refresh data every 30 seconds
+            refreshInterval = setInterval(() => {
+                if (currentTab === 'overview') {
+                    refreshSystemStatus();
+                    loadQuickStats();
+                } else if (currentTab === 'agents') {
+                    refreshAgents();
+                } else if (currentTab === 'alerts') {
+                    refreshAlerts();
+                } else if (currentTab === 'metrics') {
+                    updateCharts();
+                }
+            }, 30000);
+        }
+
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+
+            currentTab = tabName;
+
+            // Load tab-specific data
+            if (tabName === 'agents') {
+                refreshAgents();
+            } else if (tabName === 'alerts') {
+                refreshAlerts();
+            } else if (tabName === 'metrics') {
+                updateCharts();
+            } else if (tabName === 'analysis') {
+                populateAgentSelect();
+            }
+        }
+
+        async function refreshSystemStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                updateStatusIndicator('server-status', data.status === 'healthy', 'Server');
+                updateStatusIndicator('database-status', data.database === 'connected', 'Database');
+                updateStatusIndicator('ai-status', data.ai_engine === 'running', 'AI Engine');
+                
+                document.getElementById('uptime').textContent = data.uptime || 'N/A';
+                
+                updateLastRefresh();
+            } catch (error) {
+                console.error('Error fetching system status:', error);
+                showToast('Error fetching system status', 'error');
+            }
+        }
+
+        function updateStatusIndicator(elementId, isOnline, label) {
+            const element = document.getElementById(elementId);
+            if (isOnline) {
+                element.className = 'status-indicator online';
+                element.innerHTML = `<i class="fas fa-circle"></i> Online`;
+            } else {
+                element.className = 'status-indicator offline';
+                element.innerHTML = `<i class="fas fa-circle"></i> Offline`;
+            }
+        }
+
+        async function refreshAgents() {
+            try {
+                const response = await fetch('/api/v1/agents');
+                const agents = await response.json();
+                
+                const container = document.getElementById('agents-container');
+                container.innerHTML = '';
+                
+                if (agents.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #7f8c8d; padding: 20px;">No agents connected</p>';
+                    return;
+                }
+                
+                agents.forEach(agent => {
+                    const agentCard = createAgentCard(agent);
+                    container.appendChild(agentCard);
+                });
+                
+                updateLastRefresh();
+            } catch (error) {
+                console.error('Error fetching agents:', error);
+                showToast('Error fetching agents', 'error');
+            }
+        }
+
+        function createAgentCard(agent) {
+            const card = document.createElement('div');
+            card.className = `agent-card ${!agent.is_online ? 'offline' : ''}`;
+            
+            const lastSeen = new Date(agent.last_seen).toLocaleString();
+            const onlineStatus = agent.is_online ? 'Online' : 'Offline';
+            const statusClass = agent.is_online ? 'online' : 'offline';
+            
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4>${agent.hostname}</h4>
+                    <span class="status-indicator ${statusClass}">
+                        <i class="fas fa-circle"></i> ${onlineStatus}
+                    </span>
+                </div>
+                <p><strong>ID:</strong> ${agent.id}</p>
+                <p><strong>IP:</strong> ${agent.ip_address || 'N/A'}</p>
+                <p><strong>Version:</strong> ${agent.agent_version || 'N/A'}</p>
+                <p><strong>Last Seen:</strong> ${lastSeen}</p>
+                <p><strong>Metrics:</strong> ${agent.metrics_count}</p>
+                <div style="margin-top: 15px;">
+                    <button class="button" onclick="analyzeAgent(${agent.id}, '${agent.hostname}')" ${!agent.is_online ? 'disabled' : ''}>
+                        <i class="fas fa-search"></i> Analyze
+                    </button>
+                    <button class="button" onclick="viewAgentMetrics(${agent.id})">
+                        <i class="fas fa-chart-line"></i> Metrics
+                    </button>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        async function refreshAlerts() {
+            try {
+                const response = await fetch('/api/v1/alerts');
+                const alerts = await response.json();
+                
+                const container = document.getElementById('alerts-container');
+                container.innerHTML = '';
+                
+                if (alerts.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #7f8c8d; padding: 20px;">No active alerts</p>';
+                    return;
+                }
+                
+                alerts.forEach(alert => {
+                    const alertItem = createAlertItem(alert);
+                    container.appendChild(alertItem);
+                });
+                
+                updateLastRefresh();
+            } catch (error) {
+                console.error('Error fetching alerts:', error);
+                showToast('Error fetching alerts', 'error');
+            }
+        }
+
+        function createAlertItem(alert) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert-item ${alert.severity}`;
+            
+            const timestamp = new Date(alert.timestamp).toLocaleString();
+            
+            alertDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <strong>${alert.title}</strong>
+                    <span class="status-indicator ${alert.severity}">
+                        ${alert.severity.toUpperCase()}
+                    </span>
+                </div>
+                <p><strong>Agent:</strong> ${alert.agent_hostname}</p>
+                <p><strong>Type:</strong> ${alert.alert_type}</p>
+                <p><strong>Time:</strong> ${timestamp}</p>
+                ${alert.description ? `<p><strong>Description:</strong> ${alert.description}</p>` : ''}
+                ${alert.metric_name ? `<p><strong>Metric:</strong> ${alert.metric_name} = ${alert.metric_value}</p>` : ''}
+                ${alert.anomaly_score ? `<p><strong>Anomaly Score:</strong> ${alert.anomaly_score.toFixed(3)}</p>` : ''}
+            `;
+            
+            return alertDiv;
+        }
+
+        async function loadQuickStats() {
+            try {
+                const [agentsResponse, alertsResponse] = await Promise.all([
+                    fetch('/api/v1/agents'),
+                    fetch('/api/v1/alerts')
+                ]);
+                
+                const agents = await agentsResponse.json();
+                const alerts = await alertsResponse.json();
+                
+                const onlineAgents = agents.filter(agent => agent.is_online).length;
+                
+                document.getElementById('total-agents').textContent = agents.length;
+                document.getElementById('online-agents').textContent = onlineAgents;
+                document.getElementById('active-alerts').textContent = alerts.length;
+                
+                // TODO: Get last analysis time from database
+                document.getElementById('last-analysis').textContent = 'N/A';
+                
+            } catch (error) {
+                console.error('Error loading quick stats:', error);
+            }
+        }
+
+        async function triggerFullAnalysis() {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = '<div class="loading"></div> Analyzing...';
+                
+                const response = await fetch('/api/v1/analyze/all?time_window_hours=24&force=true&wait_if_in_progress=true', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                const resultsDiv = document.getElementById('quick-action-results');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-check-circle"></i> Analysis Complete</h4>
+                    <p>Status: ${result.status}</p>
+                    <p>Processed: ${result.processed_count || 0} agents</p>
+                    <p>Completed: ${result.completed_count || 0} analyses</p>
+                `;
+                
+                showToast('Full analysis completed successfully');
+                loadQuickStats();
+                refreshAlerts();
+                
+            } catch (error) {
+                console.error('Error triggering analysis:', error);
+                const resultsDiv = document.getElementById('quick-action-results');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results error';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-exclamation-circle"></i> Analysis Failed</h4>
+                    <p>Error: ${error.message}</p>
+                `;
+                showToast('Analysis failed', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+
+        async function populateAgentSelect() {
+            try {
+                const response = await fetch('/api/v1/agents');
+                const agents = await response.json();
+                
+                const select = document.getElementById('agent-select');
+                select.innerHTML = '<option value="">Select an agent...</option>';
+                
+                agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    option.textContent = `${agent.hostname} (${agent.is_online ? 'Online' : 'Offline'})`;
+                    option.disabled = !agent.is_online;
+                    select.appendChild(option);
+                });
+                
+                select.addEventListener('change', function() {
+                    const analyzeBtn = document.getElementById('analyze-agent-btn');
+                    analyzeBtn.disabled = !this.value;
+                });
+                
+            } catch (error) {
+                console.error('Error populating agent select:', error);
+            }
+        }
+
+        async function triggerAnalysisForAgent() {
+            const agentId = document.getElementById('agent-select').value;
+            if (!agentId) return;
+            
+            const timeWindow = document.getElementById('time-window').value;
+            const force = document.getElementById('force-analysis').checked;
+            const wait = document.getElementById('wait-analysis').checked;
+            
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = '<div class="loading"></div> Analyzing...';
+                
+                const response = await fetch(`/api/v1/analyze/agent/${agentId}?time_window_hours=${timeWindow}&force=${force}&wait_if_in_progress=${wait}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                const resultsDiv = document.getElementById('analysis-results-agent');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-check-circle"></i> Agent Analysis Complete</h4>
+                    <p>Status: ${result.status}</p>
+                    <p>Analysis ID: ${result.analysis_id || 'N/A'}</p>
+                `;
+                
+                showToast('Agent analysis completed successfully');
+                refreshAlerts();
+                
+            } catch (error) {
+                console.error('Error analyzing agent:', error);
+                const resultsDiv = document.getElementById('analysis-results-agent');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results error';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-exclamation-circle"></i> Analysis Failed</h4>
+                    <p>Error: ${error.message}</p>
+                `;
+                showToast('Agent analysis failed', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+
+        async function triggerAnalysisForAll() {
+            const timeWindow = document.getElementById('time-window').value;
+            const force = document.getElementById('force-analysis').checked;
+            const wait = document.getElementById('wait-analysis').checked;
+            
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = '<div class="loading"></div> Analyzing All...';
+                
+                const response = await fetch(`/api/v1/analyze/all?time_window_hours=${timeWindow}&force=${force}&wait_if_in_progress=${wait}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                const resultsDiv = document.getElementById('analysis-results-all');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-check-circle"></i> Batch Analysis Complete</h4>
+                    <p>Status: ${result.status}</p>
+                    <p>Processed: ${result.processed_count || 0} agents</p>
+                    <p>Completed: ${result.completed_count || 0} analyses</p>
+                `;
+                
+                showToast('Batch analysis completed successfully');
+                loadQuickStats();
+                refreshAlerts();
+                
+            } catch (error) {
+                console.error('Error analyzing all agents:', error);
+                const resultsDiv = document.getElementById('analysis-results-all');
+                resultsDiv.style.display = 'block';
+                resultsDiv.className = 'analysis-results error';
+                resultsDiv.innerHTML = `
+                    <h4><i class="fas fa-exclamation-circle"></i> Analysis Failed</h4>
+                    <p>Error: ${error.message}</p>
+                `;
+                showToast('Batch analysis failed', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+
+        async function analyzeAgent(agentId, hostname) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = '<div class="loading"></div> Analyzing...';
+                
+                const response = await fetch(`/api/v1/analyze/agent/${agentId}?time_window_hours=24&force=false&wait_if_in_progress=true`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                showToast(`Analysis completed for ${hostname}`);
+                refreshAlerts();
+                
+            } catch (error) {
+                console.error('Error analyzing agent:', error);
+                showToast(`Analysis failed for ${hostname}`, 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+
+        async function viewAgentMetrics(agentId) {
+            try {
+                const response = await fetch(`/api/v1/agents/${agentId}/metrics`);
+                const metrics = await response.json();
+                
+                // For now, just show a simple alert. In a real implementation,
+                // you might want to show a modal or navigate to a detailed view
+                if (metrics.length > 0) {
+                    const latest = metrics[0];
+                    alert(`Latest metrics for agent ${agentId}:\n` +
+                          `CPU: ${latest.cpu_percent}%\n` +
+                          `Memory: ${latest.memory_percent}%\n` +
+                          `Disk: ${latest.disk_percent}%\n` +
+                          `Connections: ${latest.total_connections}\n` +
+                          `Avg Latency: ${latest.avg_latency_ms}ms`);
+                } else {
+                    alert('No metrics available for this agent');
+                }
+            } catch (error) {
+                console.error('Error fetching agent metrics:', error);
+                showToast('Error fetching agent metrics', 'error');
+            }
+        }
+
+        function initializeCharts() {
+            // Initialize metrics chart
+            const metricsCtx = document.getElementById('metrics-chart').getContext('2d');
+            metricsChart = new Chart(metricsCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU Usage (%)',
+                            data: [],
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Memory Usage (%)',
+                            data: [],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Disk Usage (%)',
+                            data: [],
+                            borderColor: '#f39c12',
+                            backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Initialize network chart
+            const networkCtx = document.getElementById('network-chart').getContext('2d');
+            networkChart = new Chart(networkCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Total Connections',
+                            data: [],
+                            backgroundColor: '#2ecc71'
+                        },
+                        {
+                            label: 'Average Latency (ms)',
+                            data: [],
+                            backgroundColor: '#9b59b6'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function updateCharts() {
+            try {
+                const response = await fetch('/api/v1/agents');
+                const agents = await response.json();
+                
+                const labels = [];
+                const cpuData = [];
+                const memData = [];
+                const diskData = [];
+                const connData = [];
+                const latencyData = [];
+                
+                for (const agent of agents) {
+                    if (!agent.is_online) continue;
+                    
+                    try {
+                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics`);
+                        const metrics = await metricsResponse.json();
+                        
+                        if (metrics.length > 0) {
+                            const latest = metrics[0];
+                            labels.push(agent.hostname);
+                            cpuData.push(latest.cpu_percent || 0);
+                            memData.push(latest.memory_percent || 0);
+                            diskData.push(latest.disk_percent || 0);
+                            connData.push(latest.total_connections || 0);
+                            latencyData.push(latest.avg_latency_ms || 0);
+                        }
+                    } catch (error) {
+                        console.error(`Error fetching metrics for agent ${agent.id}:`, error);
+                    }
+                }
+                
+                // Update metrics chart
+                metricsChart.data.labels = labels;
+                metricsChart.data.datasets[0].data = cpuData;
+                metricsChart.data.datasets[1].data = memData;
+                metricsChart.data.datasets[2].data = diskData;
+                metricsChart.update();
+                
+                // Update network chart
+                networkChart.data.labels = labels;
+                networkChart.data.datasets[0].data = connData;
+                networkChart.data.datasets[1].data = latencyData;
+                networkChart.update();
+                
+            } catch (error) {
+                console.error('Error updating charts:', error);
+            }
+        }
+
+        function refreshAllData() {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            button.disabled = true;
+            button.innerHTML = '<div class="loading"></div> Refreshing...';
+            
+            Promise.all([
+                refreshSystemStatus(),
+                refreshAgents(),
+                refreshAlerts(),
+                loadQuickStats()
+            ]).then(() => {
+                showToast('All data refreshed successfully');
+                updateLastRefresh();
+            }).catch(error => {
+                console.error('Error refreshing data:', error);
+                showToast('Error refreshing some data', 'error');
+            }).finally(() => {
+                button.disabled = false;
+                button.innerHTML = originalText;
+            });
+        }
+
+        function exportData() {
+            // Simple implementation - in reality, you'd want to implement proper data export
+            showToast('Export functionality coming soon...', 'warning');
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'times' : 'exclamation'}"></i> ${message}`;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => toast.classList.add('show'), 100);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => document.body.removeChild(toast), 300);
+            }, 3000);
+        }
+
+        function updateLastRefresh() {
+            document.getElementById('last-refresh').textContent = 
+                `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        });
+    </script>
+</body>
+</html>
