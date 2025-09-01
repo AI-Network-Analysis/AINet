@@ -1,0 +1,35 @@
+ai_analysis_enabled: true
+ai_analysis_interval: 300
+collection_interval: 30
+mode: balanced
+network:
+  anomaly_detection: true
+  bandwidth_monitoring: true
+  bandwidth_spike_threshold: 200.0
+  baseline_samples: 50
+  connection_monitoring: true
+  enabled: true
+  history_size: 100
+  latency_critical_threshold: 500.0
+  latency_monitoring: true
+  latency_warning_threshold: 100.0
+  packet_loss_critical_threshold: 5.0
+  packet_loss_monitoring: true
+  packet_loss_warning_threshold: 1.0
+  sensitivity: 0.8
+retention_days: 30
+system:
+  cpu_critical_threshold: 95.0
+  cpu_monitoring: true
+  cpu_warning_threshold: 80.0
+  disk_critical_threshold: 95.0
+  disk_monitoring: true
+  disk_warning_threshold: 85.0
+  enabled: true
+  memory_critical_threshold: 95.0
+  memory_monitoring: true
+  memory_warning_threshold: 85.0
+  monitor_top_processes: true
+  process_cpu_threshold: 50.0
+  process_memory_threshold: 20.0
+  process_monitoring: true

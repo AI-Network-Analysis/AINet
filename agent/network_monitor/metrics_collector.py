@@ -1,6 +1,6 @@
 """
-Network Metrics Collector
-Collects various network and system metrics from the local machine.
+Enhanced Network Metrics Collector
+Collects various network and system metrics with configurable monitoring focus.
 """
 
 import psutil
@@ -8,33 +8,246 @@ import netifaces
 import time
 import socket
 import json
+import os
 from dataclasses import dataclass, asdict
+from typing import Dict, List, Any, Optional
+import logging
+import subprocess
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import subprocess
 import logging
 
+# Import our new monitoring modules
+try:
+    from .network_anomaly_detector import NetworkAnomalyDetector, NetworkAnomaly
+    from .system_monitor import SystemResourceMonitor, SystemAnomaly
+except ImportError:
+    # For standalone usage
+    pass
+
+# Try to import configuration manager
+try:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+    from config.monitoring_config import ConfigurationManager, MonitoringMode
+except ImportError:
+    # Fallback to basic configuration
+    ConfigurationManager = None
+    MonitoringMode = None
+
 logger = logging.getLogger(__name__)
 
 @dataclass
-class NetworkMetrics:
-    """Network metrics data structure"""
+class EnhancedMetrics:
+    """Enhanced metrics data structure"""
     timestamp: str
     hostname: str
-    interfaces: Dict[str, Dict[str, Any]]
-    connections: Dict[str, int]
-    bandwidth: Dict[str, Dict[str, int]]
-    system_metrics: Dict[str, float]
-    latency_metrics: Dict[str, float]
-    packet_stats: Dict[str, Dict[str, int]]
-
-class MetricsCollector:
-    """Collects various network and system metrics"""
+    monitoring_mode: str
     
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    # Network metrics (if network monitoring enabled)
+    interfaces: Optional[Dict[str, Dict[str, Any]]] = None
+    connections: Optional[Dict[str, int]] = None
+    bandwidth: Optional[Dict[str, Dict[str, int]]] = None
+    latency_metrics: Optional[Dict[str, float]] = None
+    packet_stats: Optional[Dict[str, Dict[str, int]]] = None
+    network_health_score: Optional[float] = None
+    network_anomalies: Optional[List[Dict[str, Any]]] = None
+    
+    # System metrics (if system monitoring enabled)
+    system_metrics: Optional[Dict[str, Any]] = None
+    system_health_score: Optional[float] = None
+    system_anomalies: Optional[List[Dict[str, Any]]] = None
+
+class EnhancedMetricsCollector:
+    """Enhanced metrics collector with configurable monitoring focus"""
+    
+    def __init__(self, config_path: str = None):
+        self.config_manager = ConfigurationManager(config_path) if config_path else ConfigurationManager()
+        self.config = self.config_manager.get_config()
         self.hostname = socket.gethostname()
+        
+        # Initialize monitoring components based on configuration
+        self.network_detector = None
+        self.system_monitor = None
+        
+        if self.config.network.enabled:
+            network_config = {
+                'sensitivity': self.config.network.sensitivity,
+                'baseline_samples': self.config.network.baseline_samples,
+                'history_size': self.config.network.history_size
+            }
+            self.network_detector = NetworkAnomalyDetector(network_config)
+        
+        if self.config.system.enabled:
+            system_config = {
+                'cpu_warning_threshold': self.config.system.cpu_warning_threshold,
+                'cpu_critical_threshold': self.config.system.cpu_critical_threshold,
+                'memory_warning_threshold': self.config.system.memory_warning_threshold,
+                'memory_critical_threshold': self.config.system.memory_critical_threshold,
+                'disk_warning_threshold': self.config.system.disk_warning_threshold,
+                'disk_critical_threshold': self.config.system.disk_critical_threshold
+            }
+            self.system_monitor = SystemResourceMonitor(system_config)
+        
+        # Store previous network stats for rate calculations
         self.previous_net_stats = {}
+        
+        logger.info(f"Enhanced metrics collector initialized with mode: {self.config.mode.value}")
+    
+    def collect_all_metrics(self) -> Dict[str, Any]:
+        """Collect all network metrics based on current mode."""
+        try:
+            metrics = {
+                'timestamp': time.time(),
+                'mode': self.config.mode.value,
+                'interfaces': [],
+                'connections': [],
+                'system_info': {}
+            }
+            
+            # Collect network data if in network mode or both
+            if self.config.mode in [MonitoringMode.NETWORK_FOCUS, MonitoringMode.BALANCED] if MonitoringMode else True:
+                interfaces = self._get_network_interfaces()
+                metrics['connections'] = self._get_network_connections()
+                
+                for interface in interfaces:
+                    metrics['interfaces'].append(self._get_interface_metrics(interface))
+                
+                # Collect network anomalies if detector is available
+                if hasattr(self, 'network_detector'):
+                    network_data = {
+                        'interfaces': metrics['interfaces'],
+                        'connections': metrics['connections']
+                    }
+                    anomalies = self.network_detector.analyze_network_metrics(network_data)
+                    metrics['network_anomalies'] = [asdict(anomaly) for anomaly in anomalies]
+            
+            # Collect system data if in system mode or both
+            if self.config.mode in [MonitoringMode.SYSTEM_FOCUS, MonitoringMode.BALANCED] if MonitoringMode else True:
+                metrics['system_info'] = self._get_system_info()
+                
+                # Collect system anomalies if monitor is available
+                if hasattr(self, 'system_monitor'):
+                    system_data = metrics['system_info']
+                    anomalies = self.system_monitor.analyze_system_metrics(system_data)
+                    metrics['system_anomalies'] = [asdict(anomaly) for anomaly in anomalies]
+            
+            return metrics
+            
+        except Exception as e:
+            logging.error(f"Error collecting metrics: {e}")
+            raise
+
+    def to_dict(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert metrics to dictionary format (already in dict format)."""
+        return metrics
+
+    def _get_network_interfaces(self) -> List[str]:
+        """Get list of network interfaces."""
+        try:
+            return list(netifaces.interfaces())
+        except Exception as e:
+            logger.warning(f"Error getting network interfaces: {e}")
+            return []
+
+    def _get_interface_metrics(self, interface: str) -> Dict[str, Any]:
+        """Get metrics for a specific network interface."""
+        try:
+            # Get interface addresses
+            addresses = netifaces.ifaddresses(interface)
+            
+            # Get network statistics
+            net_stats = psutil.net_io_counters(pernic=True).get(interface, None)
+            
+            metrics = {
+                'interface': interface,
+                'addresses': addresses,
+                'is_up': interface in netifaces.interfaces(),
+                'statistics': {}
+            }
+            
+            if net_stats:
+                # Calculate rates if we have previous stats
+                prev_stats = self.previous_net_stats.get(interface, {})
+                current_time = time.time()
+                
+                metrics['statistics'] = {
+                    'bytes_sent': net_stats.bytes_sent,
+                    'bytes_recv': net_stats.bytes_recv,
+                    'packets_sent': net_stats.packets_sent,
+                    'packets_recv': net_stats.packets_recv,
+                    'errin': net_stats.errin,
+                    'errout': net_stats.errout,
+                    'dropin': net_stats.dropin,
+                    'dropout': net_stats.dropout
+                }
+                
+                # Calculate rates if we have previous data
+                if prev_stats and 'timestamp' in prev_stats:
+                    time_diff = current_time - prev_stats['timestamp']
+                    if time_diff > 0:
+                        metrics['statistics']['bytes_sent_rate'] = (
+                            net_stats.bytes_sent - prev_stats.get('bytes_sent', 0)
+                        ) / time_diff
+                        metrics['statistics']['bytes_recv_rate'] = (
+                            net_stats.bytes_recv - prev_stats.get('bytes_recv', 0)
+                        ) / time_diff
+                
+                # Store current stats for next calculation
+                self.previous_net_stats[interface] = {
+                    'timestamp': current_time,
+                    'bytes_sent': net_stats.bytes_sent,
+                    'bytes_recv': net_stats.bytes_recv
+                }
+            
+            return metrics
+            
+        except Exception as e:
+            logger.warning(f"Error getting metrics for interface {interface}: {e}")
+            return {'interface': interface, 'error': str(e)}
+
+    def _get_network_connections(self) -> List[Dict[str, Any]]:
+        """Get current network connections."""
+        try:
+            connections = []
+            for conn in psutil.net_connections(kind='inet'):
+                connections.append({
+                    'family': conn.family.name if hasattr(conn.family, 'name') else str(conn.family),
+                    'type': conn.type.name if hasattr(conn.type, 'name') else str(conn.type),
+                    'local_address': f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else None,
+                    'remote_address': f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else None,
+                    'status': conn.status,
+                    'pid': conn.pid
+                })
+            return connections
+        except Exception as e:
+            logger.warning(f"Error getting network connections: {e}")
+            return []
+    
+    def _collect_network_metrics(self) -> Dict[str, Any]:
+        """Collect network-specific metrics"""
+        network_data = {}
+        
+        # Collect interface info if enabled
+        if self.config.network.bandwidth_monitoring:
+            network_data['interfaces'] = self.collect_interface_info()
+            network_data['bandwidth'] = self.collect_bandwidth_stats()
+        
+        # Collect connection stats if enabled
+        if self.config.network.connection_monitoring:
+            network_data['connections'] = self.collect_connection_stats()
+        
+        # Collect latency metrics if enabled
+        if self.config.network.latency_monitoring:
+            network_data['latency_metrics'] = self.collect_latency_metrics()
+        
+        # Collect packet stats if enabled
+        if self.config.network.packet_loss_monitoring:
+            network_data['packet_stats'] = self.collect_packet_stats()
+        
+        return network_data
         
     def collect_interface_info(self) -> Dict[str, Dict[str, Any]]:
         """Collect network interface information"""
@@ -299,31 +512,61 @@ class MetricsCollector:
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError, ValueError) as e:
             logger.warning(f"Ping failed for {host}: {e}")
             return -1
-    
-    def collect_all_metrics(self) -> NetworkMetrics:
-        """Collect all network and system metrics"""
-        timestamp = datetime.utcnow().isoformat()
-        
-        logger.info("Collecting network metrics...")
-        
-        interfaces = self.collect_interface_info()
-        connections = self.collect_connection_stats()
-        bandwidth = self.collect_bandwidth_stats()
-        system_metrics = self.collect_system_metrics()
-        latency_metrics = self.collect_latency_metrics()
-        packet_stats = self.collect_packet_stats()
-        
-        return NetworkMetrics(
-            timestamp=timestamp,
-            hostname=self.hostname,
-            interfaces=interfaces,
-            connections=connections,
-            bandwidth=bandwidth,
-            system_metrics=system_metrics,
-            latency_metrics=latency_metrics,
-            packet_stats=packet_stats
-        )
-    
-    def to_dict(self, metrics: NetworkMetrics) -> Dict[str, Any]:
-        """Convert metrics to dictionary"""
-        return asdict(metrics)
+
+    def _get_system_info(self) -> Dict[str, Any]:
+        """Get basic system information."""
+        try:
+            import psutil
+            load_avg = os.getloadavg() if hasattr(os, 'getloadavg') else (0, 0, 0)
+            vm = psutil.virtual_memory()
+            swap = psutil.swap_memory()
+            
+            return {
+                'cpu_percent': psutil.cpu_percent(interval=1),
+                'memory_percent': vm.percent,
+                'disk_usage': psutil.disk_usage('/').percent,
+                'load_average': {
+                    '1min': load_avg[0],
+                    '5min': load_avg[1],
+                    '15min': load_avg[2]
+                } if load_avg else {'1min': 0, '5min': 0, '15min': 0},
+                'uptime': time.time() - psutil.boot_time(),
+                'memory': {
+                    'total': vm.total,
+                    'available': vm.available,
+                    'used': vm.used,
+                    'percent': vm.percent,
+                    'swap': {
+                        'total': swap.total,
+                        'used': swap.used,
+                        'free': swap.free,
+                        'percent': swap.percent
+                    }
+                },
+                'cpu_count': psutil.cpu_count(),
+                'boot_time': psutil.boot_time(),
+                'disk': {
+                    'total': psutil.disk_usage('/').total,
+                    'used': psutil.disk_usage('/').used,
+                    'free': psutil.disk_usage('/').free,
+                    'percent': psutil.disk_usage('/').percent
+                }
+            }
+        except ImportError:
+            return {
+                'cpu_percent': None,
+                'memory_percent': None,
+                'disk_usage': None,
+                'load_average': {'1min': 0, '5min': 0, '15min': 0},
+                'uptime': None,
+                'memory': {
+                    'total': 0,
+                    'available': 0,
+                    'used': 0,
+                    'percent': 0,
+                    'swap': {'total': 0, 'used': 0, 'free': 0, 'percent': 0}
+                },
+                'cpu_count': None,
+                'boot_time': None,
+                'disk': {'total': 0, 'used': 0, 'free': 0, 'percent': 0}
+            }

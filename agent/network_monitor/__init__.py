@@ -3,6 +3,9 @@ Network Monitor Module
 Contains network metrics collection functionality.
 """
 
-from .metrics_collector import MetricsCollector, NetworkMetrics
+from .metrics_collector import EnhancedMetricsCollector
 
-__all__ = ['MetricsCollector', 'NetworkMetrics']
+# For backward compatibility
+MetricsCollector = EnhancedMetricsCollector
+
+__all__ = ['EnhancedMetricsCollector', 'MetricsCollector']
