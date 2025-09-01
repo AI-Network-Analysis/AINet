@@ -87,14 +87,14 @@ async def agent_heartbeat(
             agent = Agent(
                 hostname=heartbeat.hostname,
                 agent_version=heartbeat.agent_version,
-                first_seen=datetime.utcnow(),
+                first_seen=datetime.now(),
                 status="active"
             )
             db.add(agent)
             logger.info(f"New agent registered: {heartbeat.hostname}")
         
         # Update agent status
-        agent.last_seen = datetime.utcnow()
+        agent.last_seen = datetime.now()
         agent.agent_version = heartbeat.agent_version
         agent.status = heartbeat.status
         
@@ -128,14 +128,14 @@ async def receive_metrics(
         if not agent:
             agent = Agent(
                 hostname=metrics.hostname,
-                first_seen=datetime.utcnow(),
+                first_seen=datetime.now(),
                 status="active"
             )
             db.add(agent)
             db.flush()  # Get agent ID
         
         # Update agent last seen
-        agent.last_seen = datetime.utcnow()
+        agent.last_seen = datetime.now()
         
         # Create network metric record
         network_metric = NetworkMetric(
@@ -228,14 +228,14 @@ async def receive_metrics_batch(
                 if not agent:
                     agent = Agent(
                         hostname=metrics.hostname,
-                        first_seen=datetime.utcnow(),
+                        first_seen=datetime.now(),
                         status="active"
                     )
                     db.add(agent)
                     db.flush()  # Get agent ID
                 
                 # Update agent last seen
-                agent.last_seen = datetime.utcnow()
+                agent.last_seen = datetime.now()
                 
                 # Create network metric record
                 network_metric = NetworkMetric(
@@ -326,7 +326,7 @@ async def get_agents(
             ).count()
             
             # Check if agent is online (last seen within 5 minutes)
-            is_online = (datetime.utcnow() - agent.last_seen).total_seconds() < 300
+            is_online = (datetime.now() - agent.last_seen).total_seconds() < 300
             
             agent_info = AgentInfo(
                 id=agent.id,
