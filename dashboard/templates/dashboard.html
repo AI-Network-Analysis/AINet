@@ -2111,6 +2111,11 @@
 
         // Initialize chat functionality
         function initializeChat() {
+            // Generate a unique session ID for this chat session
+            if (!chatSessionId) {
+                chatSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+            
             const chatInput = document.getElementById('chat-input');
             const sendBtn = document.getElementById('send-btn');
             

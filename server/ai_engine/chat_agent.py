@@ -434,6 +434,9 @@ class AINetChatAgent:
         # Bind tools to LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
+        # Initialize memory for conversation history
+        self.memory = MemorySaver()
+        
         # Create the graph
         self.graph = self._create_graph()
     
@@ -457,7 +460,7 @@ class AINetChatAgent:
         )
         workflow.add_edge("tools", "agent")
         
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.memory)
     
     def _call_model(self, state: ChatState):
         """Call the model with the current state."""
@@ -499,29 +502,21 @@ Be conversational but professional. If asked about capabilities outside of netwo
             return "continue"
         return "end"
     
-    async def chat(self, message: str, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def chat(self, message: str, thread_id: str = "default") -> Dict[str, Any]:
         """Process a chat message and return the response with any tool calls."""
         try:
-            # Convert conversation history to messages
-            messages = []
-            if conversation_history:
-                for msg in conversation_history:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
+            # Create a configuration with thread ID for memory persistence
+            config = {"configurable": {"thread_id": thread_id}}
             
-            # Add current message
-            messages.append(HumanMessage(content=message))
-            
-            # Initialize state
+            # Initialize state with just the current message
+            # The memory will handle conversation history automatically
             initial_state = {
-                "messages": messages,
+                "messages": [HumanMessage(content=message)],
                 "tool_calls": []
             }
             
-            # Run the graph
-            result = await self.graph.ainvoke(initial_state)
+            # Run the graph with memory
+            result = await self.graph.ainvoke(initial_state, config)
             
             # Extract response and tool calls
             final_message = result["messages"][-1]

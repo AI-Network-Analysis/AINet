@@ -600,7 +600,6 @@ class ChatRequest(BaseModel):
     """Request model for chat interactions"""
     message: str = Field(..., description="User message to the AI agent")
     session_id: Optional[str] = Field(None, description="Optional session ID for conversation continuity")
-    conversation_history: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Previous messages in the conversation")
 
 class ChatResponse(BaseModel):
     """Response model for chat interactions"""
@@ -637,10 +636,11 @@ async def chat_with_agent(
         # Get chat agent
         chat_agent = get_chat_agent(config)
         
-        # Process the chat request
+        # Process the chat request with session-based memory
+        thread_id = request.session_id or "default"
         result = await chat_agent.chat(
             message=request.message,
-            conversation_history=request.conversation_history or []
+            thread_id=thread_id
         )
         
         return ChatResponse(
