@@ -815,3 +815,142 @@ async def delete_chat_conversation(thread_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete conversation: {str(e)}"
         )
+
+# Configuration endpoints
+@api_router.get("/config/monitoring", response_model=Dict[str, Any])
+async def get_monitoring_config():
+    """Get current monitoring configuration"""
+    try:
+        from ...config.monitoring_config import ConfigurationManager
+        
+        config_manager = ConfigurationManager()
+        config = config_manager.get_config()
+        
+        return {
+            "mode": config.mode.value,
+            "collection_interval": config.collection_interval,
+            "retention_days": config.retention_days,
+            "ai_analysis_enabled": config.ai_analysis_enabled,
+            "ai_analysis_interval": config.ai_analysis_interval,
+            "network": {
+                "enabled": config.network.enabled,
+                "anomaly_detection": config.network.anomaly_detection,
+                "bandwidth_monitoring": config.network.bandwidth_monitoring,
+                "connection_monitoring": config.network.connection_monitoring,
+                "latency_monitoring": config.network.latency_monitoring,
+                "packet_loss_monitoring": config.network.packet_loss_monitoring,
+                "sensitivity": config.network.sensitivity,
+                "baseline_samples": config.network.baseline_samples,
+                "history_size": config.network.history_size
+            },
+            "system": {
+                "enabled": config.system.enabled,
+                "cpu_monitoring": config.system.cpu_monitoring,
+                "memory_monitoring": config.system.memory_monitoring,
+                "disk_monitoring": config.system.disk_monitoring,
+                "process_monitoring": config.system.process_monitoring,
+                "cpu_warning_threshold": config.system.cpu_warning_threshold,
+                "cpu_critical_threshold": config.system.cpu_critical_threshold,
+                "memory_warning_threshold": config.system.memory_warning_threshold,
+                "memory_critical_threshold": config.system.memory_critical_threshold,
+                "disk_warning_threshold": config.system.disk_warning_threshold,
+                "disk_critical_threshold": config.system.disk_critical_threshold
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting monitoring configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get configuration: {str(e)}"
+        )
+
+@api_router.post("/config/monitoring", response_model=Dict[str, str])
+async def update_monitoring_config(config_data: Dict[str, Any]):
+    """Update monitoring configuration"""
+    try:
+        from ...config.monitoring_config import ConfigurationManager, MonitoringMode
+        
+        config_manager = ConfigurationManager()
+        config = config_manager.get_config()
+        
+        # Update mode
+        if "mode" in config_data:
+            mode_value = config_data["mode"]
+            if mode_value in [m.value for m in MonitoringMode]:
+                config.mode = MonitoringMode(mode_value)
+        
+        # Update basic settings
+        if "collection_interval" in config_data:
+            config.collection_interval = config_data["collection_interval"]
+        if "ai_analysis_enabled" in config_data:
+            config.ai_analysis_enabled = config_data["ai_analysis_enabled"]
+        
+        # Update network settings
+        if "network" in config_data:
+            network_data = config_data["network"]
+            for key, value in network_data.items():
+                if hasattr(config.network, key):
+                    setattr(config.network, key, value)
+        
+        # Update system settings
+        if "system" in config_data:
+            system_data = config_data["system"]
+            for key, value in system_data.items():
+                if hasattr(config.system, key):
+                    setattr(config.system, key, value)
+        
+        # Apply mode-specific settings
+        config._apply_mode_settings()
+        
+        # Save configuration
+        config_manager.save_config(config)
+        
+        return {"message": "Configuration updated successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error updating monitoring configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update configuration: {str(e)}"
+        )
+
+@api_router.get("/config/presets", response_model=Dict[str, Any])
+async def get_monitoring_presets():
+    """Get available monitoring configuration presets"""
+    try:
+        from ...config.monitoring_config import ConfigurationManager
+        
+        config_manager = ConfigurationManager()
+        presets = config_manager.get_monitoring_presets()
+        
+        return presets
+        
+    except Exception as e:
+        logger.error(f"Error getting monitoring presets: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get presets: {str(e)}"
+        )
+
+@api_router.post("/config/presets/{preset_name}", response_model=Dict[str, str])
+async def apply_monitoring_preset(preset_name: str):
+    """Apply a monitoring configuration preset"""
+    try:
+        from ...config.monitoring_config import ConfigurationManager
+        
+        config_manager = ConfigurationManager()
+        config_manager.apply_preset(preset_name)
+        
+        return {"message": f"Preset '{preset_name}' applied successfully"}
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error applying monitoring preset {preset_name}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to apply preset: {str(e)}"
+        )
