@@ -483,6 +483,7 @@ async def get_agent_metrics(
 async def get_agent_metrics_detailed(
     agent_id: int,
     hours: int = 72,
+    limit: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """Get detailed network metrics for a specific agent"""
@@ -497,10 +498,15 @@ async def get_agent_metrics_detailed(
         
         # Get metrics from the last N hours
         since = datetime.utcnow() - timedelta(hours=hours)
-        metrics = db.query(NetworkMetric).filter(
+        query = db.query(NetworkMetric).filter(
             NetworkMetric.agent_id == agent_id,
             NetworkMetric.timestamp >= since
-        ).order_by(NetworkMetric.timestamp.desc()).all()
+        ).order_by(NetworkMetric.timestamp.desc())
+
+        if limit is not None and isinstance(limit, int) and limit > 0:
+            metrics = query.limit(limit).all()
+        else:
+            metrics = query.all()
         
         metrics_list = []
         for metric in metrics:

@@ -3052,7 +3052,9 @@
         }
 
         // Network Metrics Functions
-        let networkOverviewChart, trafficChart;
+    let networkOverviewChart, trafficChart;
+    // Hold previous counters for rate calculation
+    const prevInterfaceTotals = new Map(); // key: agentId, value: { ts, bytes_sent, bytes_recv }
 
         function initializeNetworkCharts() {
             // Initialize network overview chart
@@ -3087,14 +3089,14 @@
                     labels: [],
                     datasets: [
                         {
-                            label: 'Bytes Sent',
+                            label: 'Sent (MB/s)',
                             data: [],
                             borderColor: '#e74c3c',
                             backgroundColor: 'rgba(231, 76, 60, 0.1)',
                             tension: 0.4
                         },
                         {
-                            label: 'Bytes Received',
+                            label: 'Recv (MB/s)',
                             data: [],
                             borderColor: '#3498db',
                             backgroundColor: 'rgba(52, 152, 219, 0.1)',
@@ -3107,7 +3109,11 @@
                     maintainAspectRatio: false,
                     scales: {
                         y: {
-                            beginAtZero: true
+                            beginAtZero: true,
+                            ticks: {
+                                // Show MB/s
+                                callback: (value) => `${value}`
+                            }
                         }
                     }
                 }
@@ -3120,51 +3126,54 @@
                 if (!window.networkOverviewChart || !window.trafficChart) {
                     try { initializeNetworkCharts(); } catch (e) { console.warn('Failed to init network charts:', e); }
                 }
+
                 const response = await fetch('/api/v1/agents');
                 const agents = await response.json();
-                
+
                 let totalConnections = 0;
                 let totalLatency = 0;
-                let totalAnomalies = 0;
                 let agentCount = 0;
                 let tcpEstablished = 0;
                 let tcpListen = 0;
                 let udpConnections = 0;
-                let otherConnections = 0;
-                
+
                 const interfaceData = {};
-                let sumBytesSent = 0;
-                let sumBytesRecv = 0;
-                
+                let aggRateSentMBs = 0;
+                let aggRateRecvMBs = 0;
+
                 for (const agent of agents) {
                     if (!agent.is_online) continue;
-                    
                     try {
-                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
+                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72&limit=2`);
                         const metrics = await metricsResponse.json();
-                        
-                        if (metrics.length > 0) {
-                            const latest = metrics[0];
+                        if (Array.isArray(metrics) && metrics.length > 0) {
                             agentCount++;
-                            
-                            // Connection statistics
-                            totalConnections += latest.total_connections || 0;
-                            tcpEstablished += latest.tcp_established || 0;
-                            tcpListen += latest.tcp_listen || 0;
-                            udpConnections += latest.udp_connections || 0;
-                            otherConnections += (latest.total_connections || 0) - 
-                                             (latest.tcp_established || 0) - 
-                                             (latest.tcp_listen || 0) - 
-                                             (latest.udp_connections || 0);
-                            
-                            // Latency
-                            if (latest.google_dns_latency_ms) {
+                            const latest = metrics[0];
+
+                            const latestTotal = Number(latest.total_connections || 0);
+                            const latestTcpEst = Number(latest.tcp_established || 0);
+                            const latestTcpListen = Number(latest.tcp_listen || 0);
+                            const latestUdp = Number(latest.udp_connections || 0);
+                            totalConnections += latestTotal;
+                            tcpEstablished += latestTcpEst;
+                            tcpListen += latestTcpListen;
+                            udpConnections += latestUdp;
+
+                            if (typeof latest.google_dns_latency_ms === 'number' && latest.google_dns_latency_ms >= 0) {
                                 totalLatency += latest.google_dns_latency_ms;
                             }
-                            
-                            // Network interfaces
+
+                            let totalSent = 0;
+                            let totalRecv = 0;
                             if (latest.interfaces) {
-                                for (const [ifaceName, ifaceData] of Object.entries(latest.interfaces)) {
+                                for (const [ifaceName, iface] of Object.entries(latest.interfaces)) {
+                                    const bytesSent = Number(iface.bytes_sent || 0);
+                                    const bytesRecv = Number(iface.bytes_recv || 0);
+                                    const packetsSent = Number(iface.packets_sent || 0);
+                                    const packetsRecv = Number(iface.packets_recv || 0);
+                                    const errIn = Number(iface.errors_in || 0);
+                                    const errOut = Number(iface.errors_out || 0);
+
                                     if (!interfaceData[ifaceName]) {
                                         interfaceData[ifaceName] = {
                                             bytes_sent: 0,
@@ -3176,16 +3185,36 @@
                                             agents: []
                                         };
                                     }
-                                    interfaceData[ifaceName].bytes_sent += ifaceData.bytes_sent || 0;
-                                    interfaceData[ifaceName].bytes_recv += ifaceData.bytes_recv || 0;
-                                    interfaceData[ifaceName].packets_sent += ifaceData.packets_sent || 0;
-                                    interfaceData[ifaceName].packets_recv += ifaceData.packets_recv || 0;
-                                    interfaceData[ifaceName].errors_in += ifaceData.errors_in || 0;
-                                    interfaceData[ifaceName].errors_out += ifaceData.errors_out || 0;
-                                    interfaceData[ifaceName].agents.push(agent.hostname);
+                                    interfaceData[ifaceName].bytes_sent += bytesSent;
+                                    interfaceData[ifaceName].bytes_recv += bytesRecv;
+                                    interfaceData[ifaceName].packets_sent += packetsSent;
+                                    interfaceData[ifaceName].packets_recv += packetsRecv;
+                                    interfaceData[ifaceName].errors_in += errIn;
+                                    interfaceData[ifaceName].errors_out += errOut;
+                                    if (!interfaceData[ifaceName].agents.includes(agent.hostname)) {
+                                        interfaceData[ifaceName].agents.push(agent.hostname);
+                                    }
 
-                                    sumBytesSent += ifaceData.bytes_sent || 0;
-                                    sumBytesRecv += ifaceData.bytes_recv || 0;
+                                    totalSent += bytesSent;
+                                    totalRecv += bytesRecv;
+                                }
+                            }
+
+                            if (metrics.length > 1) {
+                                const prev = metrics[1];
+                                let prevSent = 0, prevRecv = 0;
+                                if (prev.interfaces) {
+                                    for (const iface of Object.values(prev.interfaces)) {
+                                        prevSent += Number(iface.bytes_sent || 0);
+                                        prevRecv += Number(iface.bytes_recv || 0);
+                                    }
+                                }
+                                const dt = (new Date(latest.timestamp) - new Date(prev.timestamp)) / 1000;
+                                if (dt > 0) {
+                                    const rateSentMBs = Math.max(0, (totalSent - prevSent)) / dt / (1024 * 1024);
+                                    const rateRecvMBs = Math.max(0, (totalRecv - prevRecv)) / dt / (1024 * 1024);
+                                    aggRateSentMBs += rateSentMBs;
+                                    aggRateRecvMBs += rateRecvMBs;
                                 }
                             }
                         }
@@ -3193,43 +3222,36 @@
                         console.error(`Error fetching metrics for agent ${agent.id}:`, error);
                     }
                 }
-                
+
                 // Update summary cards
-                document.getElementById('avg-latency').textContent = 
-                    agentCount > 0 ? `${(totalLatency / agentCount).toFixed(1)} ms` : '-- ms';
+                document.getElementById('avg-latency').textContent = agentCount > 0 ? `${(totalLatency / agentCount).toFixed(1)} ms` : '-- ms';
                 document.getElementById('total-connections').textContent = totalConnections;
-                document.getElementById('network-anomalies').textContent = totalAnomalies;
-                
+                document.getElementById('network-anomalies').textContent = 0;
+
                 // Update network overview chart
                 if (window.networkOverviewChart && window.networkOverviewChart.data && window.networkOverviewChart.data.datasets && window.networkOverviewChart.data.datasets[0]) {
+                    const otherConnections = Math.max(0, totalConnections - (tcpEstablished + tcpListen + udpConnections));
                     networkOverviewChart.data.datasets[0].data = [tcpEstablished, tcpListen, udpConnections, otherConnections];
                     networkOverviewChart.update();
                 }
-                
-                // Update traffic chart with aggregate totals
-                if (window.trafficChart && window.trafficChart.data) {
+
+                // Update traffic chart
+                if (window.trafficChart && window.trafficChart.data && window.trafficChart.data.datasets && window.trafficChart.data.datasets[0]) {
                     const label = new Date().toLocaleTimeString();
-                    const labels = trafficChart.data.labels;
-                    const sentData = trafficChart.data.datasets[0].data;
-                    const recvData = trafficChart.data.datasets[1].data;
-
-                    labels.push(label);
-                    sentData.push(sumBytesSent);
-                    recvData.push(sumBytesRecv);
-
-                    // Keep last 20 points
+                    trafficChart.data.labels.push(label);
+                    trafficChart.data.datasets[0].data.push(Number(aggRateSentMBs.toFixed(2)));
+                    trafficChart.data.datasets[1].data.push(Number(aggRateRecvMBs.toFixed(2)));
                     const maxPoints = 20;
-                    if (labels.length > maxPoints) {
-                        labels.shift();
-                        sentData.shift();
-                        recvData.shift();
+                    if (trafficChart.data.labels.length > maxPoints) {
+                        trafficChart.data.labels.shift();
+                        trafficChart.data.datasets[0].data.shift();
+                        trafficChart.data.datasets[1].data.shift();
                     }
                     trafficChart.update();
                 }
 
                 // Update interfaces table
                 updateInterfacesTable(interfaceData);
-                
             } catch (error) {
                 console.error('Error updating network metrics:', error);
             }
@@ -3238,24 +3260,25 @@
         function updateInterfacesTable(interfaceData) {
             const tbody = document.getElementById('interfaces-tbody');
             tbody.innerHTML = '';
-            
-            if (Object.keys(interfaceData).length === 0) {
+
+            const entries = Object.entries(interfaceData);
+            if (entries.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5">No interface data available</td></tr>';
                 return;
             }
-            
-            for (const [ifaceName, data] of Object.entries(interfaceData)) {
+
+            for (const [ifaceName, data] of entries) {
                 const row = document.createElement('tr');
-                const totalErrors = (data.errors_in || 0) + (data.errors_out || 0);
+                const totalErrors = Number(data.errors_in || 0) + Number(data.errors_out || 0);
                 const statusClass = totalErrors > 0 ? 'status-warning' : 'status-online';
-                
+
                 row.innerHTML = `
                     <td>${ifaceName}</td>
                     <td><span class="status-indicator ${statusClass}">
                         <i class="fas fa-circle"></i> ${totalErrors > 0 ? 'Errors' : 'Active'}
                     </span></td>
-                    <td>${formatBytes(data.bytes_sent || 0)}</td>
-                    <td>${formatBytes(data.bytes_recv || 0)}</td>
+                    <td>${formatBytes(Number(data.bytes_sent || 0))}</td>
+                    <td>${formatBytes(Number(data.bytes_recv || 0))}</td>
                     <td>${totalErrors}</td>
                 `;
                 tbody.appendChild(row);
