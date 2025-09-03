@@ -1084,31 +1084,31 @@
 
         <!-- Tab Navigation -->
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('overview')">
+            <button class="tab active" onclick="switchTab('overview', this)">
                 <i class="fas fa-tachometer-alt"></i> Overview
             </button>
-            <button class="tab" onclick="switchTab('agents')">
+            <button class="tab" onclick="switchTab('agents', this)">
                 <i class="fas fa-desktop"></i> Agents
             </button>
-            <button class="tab" onclick="switchTab('analysis')">
+            <button class="tab" onclick="switchTab('analysis', this)">
                 <i class="fas fa-brain"></i> AI Analysis
             </button>
-            <button class="tab" onclick="switchTab('results')">
+            <button class="tab" onclick="switchTab('results', this)">
                 <i class="fas fa-chart-pie"></i> Analysis Results <span id="results-notification" class="status-indicator" style="display: none; margin-left: 5px; font-size: 0.7em; padding: 2px 6px;">NEW</span>
             </button>
-            <button class="tab" onclick="switchTab('alerts')">
+            <button class="tab" onclick="switchTab('alerts', this)">
                 <i class="fas fa-exclamation-triangle"></i> Alerts
             </button>
-            <button class="tab" onclick="switchTab('metrics')">
+            <button class="tab" onclick="switchTab('metrics', this)">
                 <i class="fas fa-chart-line"></i> System Metrics
             </button>
-            <button class="tab" onclick="switchTab('network')">
+            <button class="tab" onclick="switchTab('network', this)">
                 <i class="fas fa-network-wired"></i> Network Metrics
             </button>
-            <button class="tab" onclick="switchTab('config')">
+            <button class="tab" onclick="switchTab('config', this)">
                 <i class="fas fa-cogs"></i> Configuration
             </button>
-            <button class="tab" onclick="switchTab('chat')">
+            <button class="tab" onclick="switchTab('chat', this)">
                 <i class="fas fa-comments"></i> AI Chat
             </button>
         </div>
@@ -1660,10 +1660,17 @@
             }, 30000);
         }
 
-        function switchTab(tabName) {
+        function switchTab(tabName, el) {
             // Update tab buttons
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
+            if (el) {
+                el.classList.add('active');
+            } else {
+                // Fallback: activate first matching tab button
+                const btns = Array.from(document.querySelectorAll('.tab'));
+                const match = btns.find(b => b.getAttribute('onclick')?.includes(`switchTab('${tabName}'`));
+                if (match) match.classList.add('active');
+            }
 
             // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -3109,6 +3116,10 @@
 
         async function updateNetworkMetrics() {
             try {
+                // Ensure charts are initialized
+                if (!window.networkOverviewChart || !window.trafficChart) {
+                    try { initializeNetworkCharts(); } catch (e) { console.warn('Failed to init network charts:', e); }
+                }
                 const response = await fetch('/api/v1/agents');
                 const agents = await response.json();
                 
@@ -3122,6 +3133,8 @@
                 let otherConnections = 0;
                 
                 const interfaceData = {};
+                let sumBytesSent = 0;
+                let sumBytesRecv = 0;
                 
                 for (const agent of agents) {
                     if (!agent.is_online) continue;
@@ -3170,6 +3183,9 @@
                                     interfaceData[ifaceName].errors_in += ifaceData.errors_in || 0;
                                     interfaceData[ifaceName].errors_out += ifaceData.errors_out || 0;
                                     interfaceData[ifaceName].agents.push(agent.hostname);
+
+                                    sumBytesSent += ifaceData.bytes_sent || 0;
+                                    sumBytesRecv += ifaceData.bytes_recv || 0;
                                 }
                             }
                         }
@@ -3185,9 +3201,32 @@
                 document.getElementById('network-anomalies').textContent = totalAnomalies;
                 
                 // Update network overview chart
-                networkOverviewChart.data.datasets[0].data = [tcpEstablished, tcpListen, udpConnections, otherConnections];
-                networkOverviewChart.update();
+                if (window.networkOverviewChart && window.networkOverviewChart.data && window.networkOverviewChart.data.datasets && window.networkOverviewChart.data.datasets[0]) {
+                    networkOverviewChart.data.datasets[0].data = [tcpEstablished, tcpListen, udpConnections, otherConnections];
+                    networkOverviewChart.update();
+                }
                 
+                // Update traffic chart with aggregate totals
+                if (window.trafficChart && window.trafficChart.data) {
+                    const label = new Date().toLocaleTimeString();
+                    const labels = trafficChart.data.labels;
+                    const sentData = trafficChart.data.datasets[0].data;
+                    const recvData = trafficChart.data.datasets[1].data;
+
+                    labels.push(label);
+                    sentData.push(sumBytesSent);
+                    recvData.push(sumBytesRecv);
+
+                    // Keep last 20 points
+                    const maxPoints = 20;
+                    if (labels.length > maxPoints) {
+                        labels.shift();
+                        sentData.shift();
+                        recvData.shift();
+                    }
+                    trafficChart.update();
+                }
+
                 // Update interfaces table
                 updateInterfacesTable(interfaceData);
                 
