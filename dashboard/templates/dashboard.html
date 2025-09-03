@@ -2121,7 +2121,7 @@
 
         async function viewAgentMetrics(agentId) {
             try {
-                const response = await fetch(`/api/v1/agents/${agentId}/metrics`);
+                const response = await fetch(`/api/v1/agents/${agentId}/metrics?hours=72`);
                 const metrics = await response.json();
                 
                 // For now, just show a simple alert. In a real implementation,
@@ -2233,7 +2233,7 @@
                     if (!agent.is_online) continue;
                     
                     try {
-                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics`);
+                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
                         const metrics = await metricsResponse.json();
                         
                         if (metrics.length > 0) {
@@ -3127,7 +3127,7 @@
                     if (!agent.is_online) continue;
                     
                     try {
-                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics`);
+                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
                         const metrics = await metricsResponse.json();
                         
                         if (metrics.length > 0) {

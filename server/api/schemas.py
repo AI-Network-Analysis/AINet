@@ -82,6 +82,30 @@ class MetricsSummary(BaseModel):
     class Config:
         from_attributes = True
 
+class NetworkMetricsDetailed(BaseModel):
+    id: int
+    timestamp: datetime
+    # System metrics
+    cpu_percent: Optional[float] = None
+    memory_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
+    # Network metrics  
+    interfaces: Optional[Dict[str, Any]] = None
+    total_connections: Optional[int] = None
+    tcp_established: Optional[int] = None
+    tcp_listen: Optional[int] = None
+    udp_connections: Optional[int] = None
+    bandwidth_stats: Optional[Dict[str, Any]] = None
+    packet_stats: Optional[Dict[str, Any]] = None
+    # Latency metrics
+    google_dns_latency_ms: Optional[float] = None
+    cloudflare_dns_latency_ms: Optional[float] = None
+    local_gateway_latency_ms: Optional[float] = None
+    avg_latency_ms: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
 # Alert schemas
 class AlertInfo(BaseModel):
     id: int

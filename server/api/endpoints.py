@@ -22,6 +22,71 @@ logger = logging.getLogger(__name__)
 api_router = APIRouter(prefix="/api/v1")
 dashboard_router = APIRouter(prefix="/dashboard")
 
+# ---- Helpers ----
+def _parse_timestamp(ts: Any) -> datetime:
+    """Parse timestamp from various formats (ISO string, epoch str/float/int)."""
+    try:
+        if ts is None:
+            return datetime.utcnow()
+        # If already datetime, return as-is
+        if isinstance(ts, datetime):
+            return ts
+        # Try numeric epoch (string or number)
+        if isinstance(ts, (int, float)):
+            return datetime.fromtimestamp(float(ts))
+        if isinstance(ts, str):
+            s = ts.strip()
+            # Numeric string epoch
+            if s.replace(".", "", 1).isdigit():
+                return datetime.fromtimestamp(float(s))
+            # ISO 8601 (allow trailing Z)
+            try:
+                return datetime.fromisoformat(s.replace('Z', '+00:00'))
+            except Exception:
+                pass
+        # Fallback to now if all else fails
+        return datetime.utcnow()
+    except Exception:
+        return datetime.utcnow()
+
+def _normalize_connections(conn: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    """Normalize various connection stats shapes to the expected keys.
+    Supports keys from older/newer agents.
+    """
+    conn = conn or {}
+    def _get(*keys, default=0):
+        for k in keys:
+            v = conn.get(k)
+            if isinstance(v, (int, float)):
+                return int(v)
+        return default
+
+    total = _get('total_connections', 'total', 'count', default=0)
+    tcp_established = _get('tcp_established', 'established', 'tcp_established_count', default=0)
+    tcp_listen = _get('tcp_listen', 'listen', 'listening', default=0)
+    tcp_time_wait = _get('tcp_time_wait', 'time_wait', default=0)
+    tcp_close_wait = _get('tcp_close_wait', 'close_wait', default=0)
+    udp = _get('udp_connections', 'udp', default=0)
+
+    # If only aggregate tcp is provided, apportion known subtypes and set others to 0
+    tcp_total = _get('tcp', default=tcp_established + tcp_listen)
+    if tcp_total and not (tcp_established or tcp_listen):
+        # We don't know distribution; keep tcp_established as tcp_total, others 0
+        tcp_established = tcp_total
+
+    # Recompute total if not provided
+    if not total:
+        total = tcp_established + tcp_listen + udp
+
+    return {
+        'total_connections': total,
+        'tcp_established': tcp_established,
+        'tcp_listen': tcp_listen,
+        'tcp_time_wait': tcp_time_wait,
+        'tcp_close_wait': tcp_close_wait,
+        'udp_connections': udp,
+    }
+
 # Authentication dependency
 async def get_current_agent(
     x_api_key: Optional[str] = Header(None),
@@ -137,10 +202,14 @@ async def receive_metrics(
         # Update agent last seen
         agent.last_seen = datetime.now()
         
+        # Normalize timestamp and connections from various agent versions
+        parsed_ts = _parse_timestamp(metrics.timestamp)
+        conn = _normalize_connections(metrics.connections)
+
         # Create network metric record
         network_metric = NetworkMetric(
             agent_id=agent.id,
-            timestamp=datetime.fromisoformat(metrics.timestamp.replace('Z', '+00:00')),
+            timestamp=parsed_ts,
             
             # System metrics
             cpu_percent=metrics.system_metrics.get('cpu_percent'),
@@ -160,12 +229,12 @@ async def receive_metrics(
             interfaces=metrics.interfaces,
             
             # Connection statistics
-            tcp_established=metrics.connections.get('tcp_established'),
-            tcp_listen=metrics.connections.get('tcp_listen'),
-            tcp_time_wait=metrics.connections.get('tcp_time_wait'),
-            tcp_close_wait=metrics.connections.get('tcp_close_wait'),
-            udp_connections=metrics.connections.get('udp_connections'),
-            total_connections=metrics.connections.get('total_connections'),
+            tcp_established=conn.get('tcp_established'),
+            tcp_listen=conn.get('tcp_listen'),
+            tcp_time_wait=conn.get('tcp_time_wait'),
+            tcp_close_wait=conn.get('tcp_close_wait'),
+            udp_connections=conn.get('udp_connections'),
+            total_connections=conn.get('total_connections'),
             
             # Bandwidth statistics
             bandwidth_stats=metrics.bandwidth,
@@ -237,10 +306,14 @@ async def receive_metrics_batch(
                 # Update agent last seen
                 agent.last_seen = datetime.now()
                 
+                # Normalize timestamp and connections
+                parsed_ts = _parse_timestamp(metrics.timestamp)
+                conn = _normalize_connections(metrics.connections)
+
                 # Create network metric record
                 network_metric = NetworkMetric(
                     agent_id=agent.id,
-                    timestamp=datetime.fromisoformat(metrics.timestamp.replace('Z', '+00:00')),
+                    timestamp=parsed_ts,
                     
                     # System metrics
                     cpu_percent=metrics.system_metrics.get('cpu_percent'),
@@ -260,12 +333,12 @@ async def receive_metrics_batch(
                     interfaces=metrics.interfaces,
                     
                     # Connection statistics
-                    tcp_established=metrics.connections.get('tcp_established'),
-                    tcp_listen=metrics.connections.get('tcp_listen'),
-                    tcp_time_wait=metrics.connections.get('tcp_time_wait'),
-                    tcp_close_wait=metrics.connections.get('tcp_close_wait'),
-                    udp_connections=metrics.connections.get('udp_connections'),
-                    total_connections=metrics.connections.get('total_connections'),
+                    tcp_established=conn.get('tcp_established'),
+                    tcp_listen=conn.get('tcp_listen'),
+                    tcp_time_wait=conn.get('tcp_time_wait'),
+                    tcp_close_wait=conn.get('tcp_close_wait'),
+                    udp_connections=conn.get('udp_connections'),
+                    total_connections=conn.get('total_connections'),
                     
                     # Bandwidth statistics
                     bandwidth_stats=metrics.bandwidth,
@@ -404,6 +477,70 @@ async def get_agent_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve metrics"
+        )
+
+@api_router.get("/agents/{agent_id}/metrics/detailed", response_model=List[NetworkMetricsDetailed])
+async def get_agent_metrics_detailed(
+    agent_id: int,
+    hours: int = 72,
+    db: Session = Depends(get_db)
+):
+    """Get detailed network metrics for a specific agent"""
+    try:
+        # Check if agent exists
+        agent = db.query(Agent).filter(Agent.id == agent_id).first()
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Agent not found"
+            )
+        
+        # Get metrics from the last N hours
+        since = datetime.utcnow() - timedelta(hours=hours)
+        metrics = db.query(NetworkMetric).filter(
+            NetworkMetric.agent_id == agent_id,
+            NetworkMetric.timestamp >= since
+        ).order_by(NetworkMetric.timestamp.desc()).all()
+        
+        metrics_list = []
+        for metric in metrics:
+            detailed = NetworkMetricsDetailed(
+                id=metric.id,
+                timestamp=metric.timestamp,
+                cpu_percent=metric.cpu_percent,
+                memory_percent=metric.memory_percent,
+                disk_percent=metric.disk_percent,
+                interfaces=metric.interfaces,
+                total_connections=metric.total_connections,
+                tcp_established=metric.tcp_established,
+                tcp_listen=metric.tcp_listen,
+                udp_connections=metric.udp_connections,
+                bandwidth_stats=metric.bandwidth_stats,
+                packet_stats=metric.packet_stats,
+                google_dns_latency_ms=metric.google_dns_latency_ms,
+                cloudflare_dns_latency_ms=metric.cloudflare_dns_latency_ms,
+                local_gateway_latency_ms=metric.local_gateway_latency_ms,
+                avg_latency_ms=(
+                    (metric.google_dns_latency_ms or 0) +
+                    (metric.cloudflare_dns_latency_ms or 0) +
+                    (metric.local_gateway_latency_ms or 0)
+                ) / 3 if any([
+                    metric.google_dns_latency_ms,
+                    metric.cloudflare_dns_latency_ms,
+                    metric.local_gateway_latency_ms
+                ]) else None
+            )
+            metrics_list.append(detailed)
+        
+        return metrics_list
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving detailed metrics for agent {agent_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve detailed metrics"
         )
 
 # Alerts endpoints
@@ -821,7 +958,7 @@ async def delete_chat_conversation(thread_id: str):
 async def get_monitoring_config():
     """Get current monitoring configuration"""
     try:
-        from ...config.monitoring_config import ConfigurationManager
+        from config.monitoring_config import ConfigurationManager
         
         config_manager = ConfigurationManager()
         config = config_manager.get_config()
@@ -868,7 +1005,7 @@ async def get_monitoring_config():
 async def update_monitoring_config(config_data: Dict[str, Any]):
     """Update monitoring configuration"""
     try:
-        from ...config.monitoring_config import ConfigurationManager, MonitoringMode
+        from config.monitoring_config import ConfigurationManager, MonitoringMode
         
         config_manager = ConfigurationManager()
         config = config_manager.get_config()
@@ -918,7 +1055,7 @@ async def update_monitoring_config(config_data: Dict[str, Any]):
 async def get_monitoring_presets():
     """Get available monitoring configuration presets"""
     try:
-        from ...config.monitoring_config import ConfigurationManager
+        from config.monitoring_config import ConfigurationManager
         
         config_manager = ConfigurationManager()
         presets = config_manager.get_monitoring_presets()
@@ -936,7 +1073,7 @@ async def get_monitoring_presets():
 async def apply_monitoring_preset(preset_name: str):
     """Apply a monitoring configuration preset"""
     try:
-        from ...config.monitoring_config import ConfigurationManager
+        from config.monitoring_config import ConfigurationManager
         
         config_manager = ConfigurationManager()
         config_manager.apply_preset(preset_name)

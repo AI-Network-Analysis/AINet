@@ -173,13 +173,18 @@ class NetworkAgent:
                         'drops_out': stats.get('dropout', 0)
                     }
             
-            # Transform connections from list to simple counts
+            # Transform connections from list to server-expected counts
             connections_list = raw_metrics.get('connections', [])
+            tcp_total = len([c for c in connections_list if c.get('type') == 'SOCK_STREAM'])
             connections_dict = {
-                'total': len(connections_list),
-                'tcp': len([c for c in connections_list if c.get('type') == 'SOCK_STREAM']),
-                'udp': len([c for c in connections_list if c.get('type') == 'SOCK_DGRAM']),
-                'established': len([c for c in connections_list if c.get('status') == 'ESTABLISHED'])
+                'total_connections': len(connections_list),
+                'tcp_established': len([c for c in connections_list if c.get('status') == 'ESTABLISHED']),
+                'tcp_listen': len([c for c in connections_list if c.get('status') == 'LISTEN']),
+                'tcp_time_wait': len([c for c in connections_list if c.get('status') == 'TIME_WAIT']),
+                'tcp_close_wait': len([c for c in connections_list if c.get('status') == 'CLOSE_WAIT']),
+                'udp_connections': len([c for c in connections_list if c.get('type') == 'SOCK_DGRAM']),
+                'tcp': tcp_total,  # keep aggregate for backward compatibility
+                'total': len(connections_list),  # keep aggregate for backward compatibility
             }
             
             # Create bandwidth metrics from interface data
@@ -202,12 +207,15 @@ class NetworkAgent:
                 'load_15min': sys_info.get('load_average', {}).get('15min', 0.0)
             }
             
-            # Create basic latency metrics (placeholder for now)
-            latency_metrics = {
-                'avg_ping': 0.0,
-                'max_ping': 0.0,
-                'min_ping': 0.0
-            }
+            # Use collector to get real latency metrics (keys match server schema)
+            try:
+                latency_metrics = self.metrics_collector.collect_latency_metrics()
+            except Exception:
+                latency_metrics = {
+                    'google_dns_latency_ms': -1.0,
+                    'cloudflare_dns_latency_ms': -1.0,
+                    'local_gateway_latency_ms': -1.0,
+                }
             
             # Create packet stats from interface data
             packet_stats = {}
