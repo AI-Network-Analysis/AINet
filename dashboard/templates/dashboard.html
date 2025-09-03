@@ -2151,9 +2151,23 @@
         }
 
         function initializeCharts() {
-            // Initialize metrics chart
-            const metricsCtx = document.getElementById('metrics-chart').getContext('2d');
-            metricsChart = new Chart(metricsCtx, {
+            // Destroy existing charts to avoid canvas reuse and stale refs
+            if (metricsChart && typeof metricsChart.destroy === 'function') {
+                metricsChart.destroy();
+                metricsChart = null;
+            }
+            if (networkChart && typeof networkChart.destroy === 'function') {
+                networkChart.destroy();
+                networkChart = null;
+            }
+
+            // Initialize metrics chart (guard missing canvas)
+            const metricsCanvas = document.getElementById('metrics-chart');
+            if (!metricsCanvas) {
+                console.warn('metrics-chart canvas not found; skipping init');
+            } else {
+                const metricsCtx = metricsCanvas.getContext('2d');
+                metricsChart = new Chart(metricsCtx, {
                 type: 'line',
                 data: {
                     labels: [],
@@ -2191,10 +2205,16 @@
                         }
                     }
                 }
-            });
+                });
+            }
 
             // Initialize network chart
-            const networkCtx = document.getElementById('network-chart').getContext('2d');
+            const netCanvas = document.getElementById('network-chart');
+            if (!netCanvas) {
+                console.warn('network-chart canvas not found; skipping init');
+                return; // nothing more to init
+            }
+            const networkCtx = netCanvas.getContext('2d');
             networkChart = new Chart(networkCtx, {
                 type: 'bar',
                 data: {
@@ -2226,6 +2246,11 @@
 
         async function updateCharts() {
             try {
+                // Ensure charts exist before updating
+                if (!metricsChart || !networkChart) {
+                    try { initializeCharts(); } catch (e) { console.warn('Failed to (re)initialize system charts:', e); }
+                }
+
                 const response = await fetch('/api/v1/agents');
                 const agents = await response.json();
                 
@@ -2272,17 +2297,21 @@
                 if (avgDiskElement) avgDiskElement.textContent = `${avgDisk}%`;
                 
                 // Update metrics chart
-                metricsChart.data.labels = labels;
-                metricsChart.data.datasets[0].data = cpuData;
-                metricsChart.data.datasets[1].data = memData;
-                metricsChart.data.datasets[2].data = diskData;
-                metricsChart.update();
+                if (metricsChart) {
+                    metricsChart.data.labels = labels;
+                    metricsChart.data.datasets[0].data = cpuData;
+                    metricsChart.data.datasets[1].data = memData;
+                    metricsChart.data.datasets[2].data = diskData;
+                    metricsChart.update();
+                }
                 
                 // Update network chart
-                networkChart.data.labels = labels;
-                networkChart.data.datasets[0].data = connData;
-                networkChart.data.datasets[1].data = latencyData;
-                networkChart.update();
+                if (networkChart) {
+                    networkChart.data.labels = labels;
+                    networkChart.data.datasets[0].data = connData;
+                    networkChart.data.datasets[1].data = latencyData;
+                    networkChart.update();
+                }
                 
             } catch (error) {
                 console.error('Error updating charts:', error);
