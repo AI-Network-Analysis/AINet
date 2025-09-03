@@ -3057,6 +3057,15 @@
     const prevInterfaceTotals = new Map(); // key: agentId, value: { ts, bytes_sent, bytes_recv }
 
         function initializeNetworkCharts() {
+            // Destroy existing charts if any to avoid canvas reuse errors
+            if (networkOverviewChart && typeof networkOverviewChart.destroy === 'function') {
+                networkOverviewChart.destroy();
+                networkOverviewChart = null;
+            }
+            if (trafficChart && typeof trafficChart.destroy === 'function') {
+                trafficChart.destroy();
+                trafficChart = null;
+            }
             // Initialize network overview chart
             const networkOverviewCtx = document.getElementById('network-overview-chart').getContext('2d');
             networkOverviewChart = new Chart(networkOverviewCtx, {
@@ -3123,7 +3132,7 @@
         async function updateNetworkMetrics() {
             try {
                 // Ensure charts are initialized
-                if (!window.networkOverviewChart || !window.trafficChart) {
+                if (!networkOverviewChart || !trafficChart) {
                     try { initializeNetworkCharts(); } catch (e) { console.warn('Failed to init network charts:', e); }
                 }
 
@@ -3229,14 +3238,14 @@
                 document.getElementById('network-anomalies').textContent = 0;
 
                 // Update network overview chart
-                if (window.networkOverviewChart && window.networkOverviewChart.data && window.networkOverviewChart.data.datasets && window.networkOverviewChart.data.datasets[0]) {
+                if (networkOverviewChart && networkOverviewChart.data && networkOverviewChart.data.datasets && networkOverviewChart.data.datasets[0]) {
                     const otherConnections = Math.max(0, totalConnections - (tcpEstablished + tcpListen + udpConnections));
                     networkOverviewChart.data.datasets[0].data = [tcpEstablished, tcpListen, udpConnections, otherConnections];
                     networkOverviewChart.update();
                 }
 
                 // Update traffic chart
-                if (window.trafficChart && window.trafficChart.data && window.trafficChart.data.datasets && window.trafficChart.data.datasets[0]) {
+                if (trafficChart && trafficChart.data && trafficChart.data.datasets && trafficChart.data.datasets[0]) {
                     const label = new Date().toLocaleTimeString();
                     trafficChart.data.labels.push(label);
                     trafficChart.data.datasets[0].data.push(Number(aggRateSentMBs.toFixed(2)));
