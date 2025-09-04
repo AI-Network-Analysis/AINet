@@ -1674,9 +1674,10 @@
     </div>
 
     <script>
-        let currentTab = 'overview';
-        let refreshInterval;
-        let metricsChart, networkChart, historicalChart;
+    let currentTab = 'overview';
+    let refreshInterval;
+    // Charts
+    let metricsChart, networkChart, historicalChart;
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
@@ -2219,7 +2220,7 @@
             }
         }
 
-        function initializeCharts() {
+    function initializeCharts() {
             // Destroy existing charts to avoid canvas reuse and stale refs
             if (metricsChart && typeof metricsChart.destroy === 'function') {
                 metricsChart.destroy();
@@ -2276,48 +2277,13 @@
                 }
                 });
             }
-
-            // Initialize network chart
-            const netCanvas = document.getElementById('network-chart');
-            if (!netCanvas) {
-                console.warn('network-chart canvas not found; skipping init');
-                return; // nothing more to init
-            }
-            const networkCtx = netCanvas.getContext('2d');
-            networkChart = new Chart(networkCtx, {
-                type: 'bar',
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            label: 'Total Connections',
-                            data: [],
-                            backgroundColor: '#2ecc71'
-                        },
-                        {
-                            label: 'Average Latency (ms)',
-                            data: [],
-                            backgroundColor: '#9b59b6'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
         }
 
         async function updateCharts() {
             try {
-                // Ensure charts exist before updating
-                if (!metricsChart || !networkChart) {
-                    try { initializeCharts(); } catch (e) { console.warn('Failed to (re)initialize system charts:', e); }
+                // Ensure metrics chart exists before updating (do not depend on unrelated charts)
+                if (!metricsChart) {
+                    try { initializeCharts(); } catch (e) { console.warn('Failed to (re)initialize metrics chart:', e); }
                 }
 
                 const response = await fetch('/api/v1/agents');
@@ -2331,63 +2297,54 @@
                 
                 const selectedAgentId = document.getElementById('metrics-agent-filter') ? 
                     document.getElementById('metrics-agent-filter').value : '';
-                
-                const labels = [];
-                const cpuData = [];
-                const memData = [];
-                const diskData = [];
-                const connData = [];
-                const latencyData = [];
-                
+                // Gather latest values (either specific agent or average across online agents)
+                const latestValues = { cpu: [], mem: [], disk: [] };
                 for (const agent of agents) {
                     if (!agent.is_online) continue;
-                    
-                    // If agent filter is selected, only show that agent
                     if (selectedAgentId && agent.id != selectedAgentId) continue;
-                    
                     try {
-                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
+                        const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=1&limit=1`);
                         const metrics = await metricsResponse.json();
-                        
-                        if (metrics.length > 0) {
+                        if (Array.isArray(metrics) && metrics.length > 0) {
                             const latest = metrics[0];
-                            labels.push(agent.hostname);
-                            cpuData.push(latest.cpu_percent || 0);
-                            memData.push(latest.memory_percent || 0);
-                            diskData.push(latest.disk_percent || 0);
-                            connData.push(latest.total_connections || 0);
-                            latencyData.push(latest.avg_latency_ms || 0);
+                            latestValues.cpu.push(Number(latest.cpu_percent || 0));
+                            latestValues.mem.push(Number(latest.memory_percent || 0));
+                            latestValues.disk.push(Number(latest.disk_percent || 0));
                         }
                     } catch (error) {
                         console.error(`Error fetching metrics for agent ${agent.id}:`, error);
                     }
                 }
-                
-                // Check if no data available for selected filter
-                if (labels.length === 0) {
+
+                const hasData = latestValues.cpu.length > 0 || latestValues.mem.length > 0 || latestValues.disk.length > 0;
+                if (!hasData) {
                     displayNoDataCharts();
                     return;
                 }
-                
-                // Update metrics chart
-                if (metricsChart) {
-                    metricsChart.data.labels = labels;
-                    metricsChart.data.datasets[0].data = cpuData;
-                    metricsChart.data.datasets[1].data = memData;
-                    metricsChart.data.datasets[2].data = diskData;
+
+                // Compute value (average across agents or single agent)
+                const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0) / arr.length) : 0;
+                const cpuVal = avg(latestValues.cpu);
+                const memVal = avg(latestValues.mem);
+                const diskVal = avg(latestValues.disk);
+
+                // Append to time-series like Network Traffic chart
+                if (metricsChart && metricsChart.data) {
+                    const label = new Date().toLocaleTimeString();
+                    metricsChart.data.labels.push(label);
+                    metricsChart.data.datasets[0].data.push(Number(cpuVal.toFixed(2)));
+                    metricsChart.data.datasets[1].data.push(Number(memVal.toFixed(2)));
+                    metricsChart.data.datasets[2].data.push(Number(diskVal.toFixed(2)));
+                    const maxPoints = 30;
+                    if (metricsChart.data.labels.length > maxPoints) {
+                        metricsChart.data.labels.shift();
+                        metricsChart.data.datasets.forEach(ds => ds.data.shift());
+                    }
                     metricsChart.update();
                 }
-                
-                // Update network chart
-                if (networkChart) {
-                    networkChart.data.labels = labels;
-                    networkChart.data.datasets[0].data = connData;
-                    networkChart.data.datasets[1].data = latencyData;
-                    networkChart.update();
-                }
-                
-                // Update summary cards
-                updateSystemMetricsSummary(cpuData, memData, diskData);
+
+                // Update summary cards using the same values
+                updateSystemMetricsSummary([cpuVal], [memVal], [diskVal]);
                 
             } catch (error) {
                 console.error('Error updating charts:', error);
