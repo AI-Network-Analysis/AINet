@@ -1293,15 +1293,27 @@
 
         <!-- Metrics Tab -->
         <div id="metrics" class="tab-content">
+            <div class="card" style="margin-bottom: 20px;">
+                <h3><i class="fas fa-filter"></i> Metrics Filter</h3>
+                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <label for="metrics-agent-filter">View metrics for:</label>
+                    <select id="metrics-agent-filter" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; min-width: 200px;" onchange="onMetricsFilterChange()">
+                        <option value="">All Agents (Average)</option>
+                    </select>
+                    <div id="no-agents-message" style="display: none; color: #e74c3c; font-weight: 600;">
+                        <i class="fas fa-exclamation-triangle"></i> No agents available
+                    </div>
+                </div>
+            </div>
             <div class="dashboard-grid">
                 <div class="card">
-                    <h3><i class="fas fa-chart-line"></i> System Metrics Overview</h3>
+                    <h3><i class="fas fa-chart-line"></i> <span id="metrics-chart-title">System Metrics Overview</span></h3>
                     <div class="chart-container">
                         <canvas id="metrics-chart"></canvas>
                     </div>
                 </div>
                 <div class="card">
-                    <h3><i class="fas fa-server"></i> System Resource Summary</h3>
+                    <h3><i class="fas fa-server"></i> <span id="metrics-summary-title">System Resource Summary</span></h3>
                     <div id="system-metrics-summary">
                         <div class="metric-grid">
                             <div class="metric-card">
@@ -1329,25 +1341,56 @@
                     </div>
                 </div>
             </div>
+            <!-- Historical metrics chart (visible only when individual agent is selected) -->
+            <div id="historical-metrics-container" class="dashboard-grid" style="display: none; margin-top: 20px;">
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h3><i class="fas fa-history"></i> <span id="historical-chart-title">Historical Trends</span></h3>
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                        <label for="historical-timeframe">Time Range:</label>
+                        <select id="historical-timeframe" style="padding: 5px; border-radius: 3px; border: 1px solid #ddd;" onchange="updateHistoricalChart()">
+                            <option value="1">Last Hour</option>
+                            <option value="6">Last 6 Hours</option>
+                            <option value="24" selected>Last 24 Hours</option>
+                            <option value="72">Last 3 Days</option>
+                            <option value="168">Last Week</option>
+                        </select>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="historical-metrics-chart"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Network Metrics Tab -->
         <div id="network" class="tab-content">
+            <div class="card" style="margin-bottom: 20px;">
+                <h3><i class="fas fa-filter"></i> Network Filter</h3>
+                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <label for="network-agent-filter">View network metrics for:</label>
+                    <select id="network-agent-filter" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; min-width: 200px;" onchange="onNetworkFilterChange()">
+                        <option value="">All Agents (Combined)</option>
+                    </select>
+                    <div id="no-agents-network-message" style="display: none; color: #e74c3c; font-weight: 600;">
+                        <i class="fas fa-exclamation-triangle"></i> No agents available
+                    </div>
+                </div>
+            </div>
             <div class="dashboard-grid">
                 <div class="card">
-                    <h3><i class="fas fa-network-wired"></i> Network Overview</h3>
+                    <h3><i class="fas fa-network-wired"></i> <span id="network-overview-title">Network Overview</span></h3>
                     <div class="chart-container">
                         <canvas id="network-overview-chart"></canvas>
                     </div>
                 </div>
                 <div class="card">
-                    <h3><i class="fas fa-exchange-alt"></i> Network Traffic</h3>
+                    <h3><i class="fas fa-exchange-alt"></i> <span id="network-traffic-title">Network Traffic</span></h3>
                     <div class="chart-container">
                         <canvas id="traffic-chart"></canvas>
                     </div>
                 </div>
                 <div class="card">
-                    <h3><i class="fas fa-wifi"></i> Network Health Summary</h3>
+                    <h3><i class="fas fa-wifi"></i> <span id="network-health-title">Network Health Summary</span></h3>
                     <div id="network-health-summary">
                         <div class="metric-grid">
                             <div class="metric-card">
@@ -1382,7 +1425,7 @@
                     </div>
                 </div>
                 <div class="card">
-                    <h3><i class="fas fa-list"></i> Network Interfaces</h3>
+                    <h3><i class="fas fa-list"></i> <span id="network-interfaces-title">Network Interfaces</span></h3>
                     <div id="network-interfaces-table">
                         <table class="interface-table">
                             <thead>
@@ -1633,7 +1676,7 @@
     <script>
         let currentTab = 'overview';
         let refreshInterval;
-        let metricsChart, networkChart;
+        let metricsChart, networkChart, historicalChart;
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
@@ -1663,10 +1706,24 @@
                     refreshAlerts();
                 } else if (currentTab === 'metrics') {
                     updateCharts();
+                    updateSystemMetricsSummary();
                 } else if (currentTab === 'network') {
                     updateNetworkMetrics();
                 }
+                
+                // Always update charts data in background for smooth transitions
+                if (currentTab === 'metrics') {
+                    updateLastRefresh();
+                }
             }, 30000);
+            
+            // Initial load of charts when dashboard starts
+            setTimeout(() => {
+                if (currentTab === 'metrics') {
+                    updateCharts();
+                    updateSystemMetricsSummary();
+                }
+            }, 1000);
         }
 
         function switchTab(tabName, el) {
@@ -1701,8 +1758,11 @@
             } else if (tabName === 'alerts') {
                 refreshAlerts();
             } else if (tabName === 'metrics') {
+                populateMetricsAgentFilter();
                 updateCharts();
+                updateSystemMetricsSummary();
             } else if (tabName === 'network') {
+                populateNetworkAgentFilter();
                 updateNetworkMetrics();
             } else if (tabName === 'config') {
                 loadConfiguration();
@@ -2263,6 +2323,15 @@
                 const response = await fetch('/api/v1/agents');
                 const agents = await response.json();
                 
+                // Check if no agents available
+                if (agents.length === 0) {
+                    displayNoAgentsCharts();
+                    return;
+                }
+                
+                const selectedAgentId = document.getElementById('metrics-agent-filter') ? 
+                    document.getElementById('metrics-agent-filter').value : '';
+                
                 const labels = [];
                 const cpuData = [];
                 const memData = [];
@@ -2272,6 +2341,9 @@
                 
                 for (const agent of agents) {
                     if (!agent.is_online) continue;
+                    
+                    // If agent filter is selected, only show that agent
+                    if (selectedAgentId && agent.id != selectedAgentId) continue;
                     
                     try {
                         const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
@@ -2291,19 +2363,11 @@
                     }
                 }
                 
-                // Calculate averages for system metrics summary
-                const avgCpu = cpuData.length > 0 ? (cpuData.reduce((a, b) => a + b, 0) / cpuData.length).toFixed(1) : 0;
-                const avgMemory = memData.length > 0 ? (memData.reduce((a, b) => a + b, 0) / memData.length).toFixed(1) : 0;
-                const avgDisk = diskData.length > 0 ? (diskData.reduce((a, b) => a + b, 0) / diskData.length).toFixed(1) : 0;
-                
-                // Update system metrics summary cards
-                const avgCpuElement = document.getElementById('avg-cpu');
-                const avgMemoryElement = document.getElementById('avg-memory');
-                const avgDiskElement = document.getElementById('avg-disk');
-                
-                if (avgCpuElement) avgCpuElement.textContent = `${avgCpu}%`;
-                if (avgMemoryElement) avgMemoryElement.textContent = `${avgMemory}%`;
-                if (avgDiskElement) avgDiskElement.textContent = `${avgDisk}%`;
+                // Check if no data available for selected filter
+                if (labels.length === 0) {
+                    displayNoDataCharts();
+                    return;
+                }
                 
                 // Update metrics chart
                 if (metricsChart) {
@@ -2322,8 +2386,316 @@
                     networkChart.update();
                 }
                 
+                // Update summary cards
+                updateSystemMetricsSummary(cpuData, memData, diskData);
+                
             } catch (error) {
                 console.error('Error updating charts:', error);
+                displayErrorCharts();
+            }
+        }
+
+        function displayNoAgentsCharts() {
+            // Clear chart data and show message
+            if (metricsChart) {
+                metricsChart.data.labels = ['No Agents'];
+                metricsChart.data.datasets[0].data = [0];
+                metricsChart.data.datasets[1].data = [0];
+                metricsChart.data.datasets[2].data = [0];
+                metricsChart.update();
+            }
+            
+            if (networkChart) {
+                networkChart.data.labels = ['No Agents'];
+                networkChart.data.datasets[0].data = [0];
+                networkChart.data.datasets[1].data = [0];
+                networkChart.update();
+            }
+            
+            // Update summary cards to show no data
+            const avgCpuElement = document.getElementById('avg-cpu');
+            const avgMemoryElement = document.getElementById('avg-memory');
+            const avgDiskElement = document.getElementById('avg-disk');
+            
+            if (avgCpuElement) avgCpuElement.textContent = 'No Data';
+            if (avgMemoryElement) avgMemoryElement.textContent = 'No Data';
+            if (avgDiskElement) avgDiskElement.textContent = 'No Data';
+        }
+
+        function displayNoDataCharts() {
+            const selectedFilter = document.getElementById('metrics-agent-filter');
+            const isAgentSelected = selectedFilter && selectedFilter.value;
+            const message = isAgentSelected ? 'Agent Offline' : 'No Online Agents';
+            
+            // Clear chart data and show message
+            if (metricsChart) {
+                metricsChart.data.labels = [message];
+                metricsChart.data.datasets[0].data = [0];
+                metricsChart.data.datasets[1].data = [0];
+                metricsChart.data.datasets[2].data = [0];
+                metricsChart.update();
+            }
+            
+            if (networkChart) {
+                networkChart.data.labels = [message];
+                networkChart.data.datasets[0].data = [0];
+                networkChart.data.datasets[1].data = [0];
+                networkChart.update();
+            }
+            
+            // Update summary cards to show no data
+            const avgCpuElement = document.getElementById('avg-cpu');
+            const avgMemoryElement = document.getElementById('avg-memory');
+            const avgDiskElement = document.getElementById('avg-disk');
+            
+            if (avgCpuElement) avgCpuElement.textContent = isAgentSelected ? 'Offline' : 'No Data';
+            if (avgMemoryElement) avgMemoryElement.textContent = isAgentSelected ? 'Offline' : 'No Data';
+            if (avgDiskElement) avgDiskElement.textContent = isAgentSelected ? 'Offline' : 'No Data';
+        }
+
+        function displayErrorCharts() {
+            // Clear chart data and show error message
+            if (metricsChart) {
+                metricsChart.data.labels = ['Error Loading Data'];
+                metricsChart.data.datasets[0].data = [0];
+                metricsChart.data.datasets[1].data = [0];
+                metricsChart.data.datasets[2].data = [0];
+                metricsChart.update();
+            }
+            
+            if (networkChart) {
+                networkChart.data.labels = ['Error Loading Data'];
+                networkChart.data.datasets[0].data = [0];
+                networkChart.data.datasets[1].data = [0];
+                networkChart.update();
+            }
+            
+            // Update summary cards to show error
+            const avgCpuElement = document.getElementById('avg-cpu');
+            const avgMemoryElement = document.getElementById('avg-memory');
+            const avgDiskElement = document.getElementById('avg-disk');
+            
+            if (avgCpuElement) avgCpuElement.textContent = 'Error';
+            if (avgMemoryElement) avgMemoryElement.textContent = 'Error';
+            if (avgDiskElement) avgDiskElement.textContent = 'Error';
+        }
+
+        function initializeHistoricalChart() {
+            const canvas = document.getElementById('historical-metrics-chart');
+            if (!canvas) return;
+            
+            // Destroy existing chart if it exists
+            if (historicalChart && typeof historicalChart.destroy === 'function') {
+                historicalChart.destroy();
+                historicalChart = null;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            historicalChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU Usage (%)',
+                            data: [],
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4,
+                            fill: false
+                        },
+                        {
+                            label: 'Memory Usage (%)',
+                            data: [],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            tension: 0.4,
+                            fill: false
+                        },
+                        {
+                            label: 'Disk Usage (%)',
+                            data: [],
+                            borderColor: '#f39c12',
+                            backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                            tension: 0.4,
+                            fill: false
+                        },
+                        {
+                            label: 'Network Connections',
+                            data: [],
+                            borderColor: '#2ecc71',
+                            backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                            tension: 0.4,
+                            fill: false,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Usage (%)'
+                            },
+                            min: 0,
+                            max: 100
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Connections'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        async function updateHistoricalChart() {
+            const selectedAgentId = document.getElementById('metrics-agent-filter') ? 
+                document.getElementById('metrics-agent-filter').value : '';
+            const timeframe = document.getElementById('historical-timeframe') ? 
+                document.getElementById('historical-timeframe').value : '24';
+            
+            if (!selectedAgentId || !historicalChart) return;
+            
+            try {
+                const response = await fetch(`/api/v1/agents/${selectedAgentId}/metrics/detailed?hours=${timeframe}`);
+                const metrics = await response.json();
+                
+                if (metrics.length === 0) {
+                    // No data available
+                    historicalChart.data.labels = ['No Data'];
+                    historicalChart.data.datasets.forEach(dataset => {
+                        dataset.data = [0];
+                    });
+                    historicalChart.update();
+                    return;
+                }
+                
+                // Sort metrics by timestamp (oldest first)
+                metrics.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                
+                // Prepare data
+                const labels = [];
+                const cpuData = [];
+                const memoryData = [];
+                const diskData = [];
+                const connectionData = [];
+                
+                metrics.forEach(metric => {
+                    const timestamp = new Date(metric.timestamp);
+                    labels.push(timestamp.toLocaleTimeString());
+                    cpuData.push(metric.cpu_percent || 0);
+                    memoryData.push(metric.memory_percent || 0);
+                    diskData.push(metric.disk_percent || 0);
+                    connectionData.push(metric.total_connections || 0);
+                });
+                
+                // Update chart
+                historicalChart.data.labels = labels;
+                historicalChart.data.datasets[0].data = cpuData;
+                historicalChart.data.datasets[1].data = memoryData;
+                historicalChart.data.datasets[2].data = diskData;
+                historicalChart.data.datasets[3].data = connectionData;
+                historicalChart.update();
+                
+            } catch (error) {
+                console.error('Error updating historical chart:', error);
+                // Show error state
+                historicalChart.data.labels = ['Error Loading Data'];
+                historicalChart.data.datasets.forEach(dataset => {
+                    dataset.data = [0];
+                });
+                historicalChart.update();
+            }
+        }
+
+        async function updateSystemMetricsSummary(cpuData = null, memData = null, diskData = null) {
+            try {
+                // If data not provided, fetch it
+                if (!cpuData || !memData || !diskData) {
+                    const response = await fetch('/api/v1/agents');
+                    const agents = await response.json();
+                    
+                    const selectedAgentId = document.getElementById('metrics-agent-filter') ? 
+                        document.getElementById('metrics-agent-filter').value : '';
+                    
+                    const tempCpuData = [];
+                    const tempMemData = [];
+                    const tempDiskData = [];
+                    
+                    for (const agent of agents) {
+                        if (!agent.is_online) continue;
+                        
+                        // If agent filter is selected, only show that agent
+                        if (selectedAgentId && agent.id != selectedAgentId) continue;
+                        
+                        try {
+                            const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72`);
+                            const metrics = await metricsResponse.json();
+                            
+                            if (metrics.length > 0) {
+                                const latest = metrics[0];
+                                tempCpuData.push(latest.cpu_percent || 0);
+                                tempMemData.push(latest.memory_percent || 0);
+                                tempDiskData.push(latest.disk_percent || 0);
+                            }
+                        } catch (error) {
+                            console.error(`Error fetching metrics for agent ${agent.id}:`, error);
+                        }
+                    }
+                    
+                    cpuData = tempCpuData;
+                    memData = tempMemData;
+                    diskData = tempDiskData;
+                }
+                
+                // Calculate averages for system metrics summary
+                const avgCpu = cpuData.length > 0 ? (cpuData.reduce((a, b) => a + b, 0) / cpuData.length).toFixed(1) : 0;
+                const avgMemory = memData.length > 0 ? (memData.reduce((a, b) => a + b, 0) / memData.length).toFixed(1) : 0;
+                const avgDisk = diskData.length > 0 ? (diskData.reduce((a, b) => a + b, 0) / diskData.length).toFixed(1) : 0;
+                
+                // Update system metrics summary cards
+                const avgCpuElement = document.getElementById('avg-cpu');
+                const avgMemoryElement = document.getElementById('avg-memory');
+                const avgDiskElement = document.getElementById('avg-disk');
+                
+                if (avgCpuElement) avgCpuElement.textContent = `${avgCpu}%`;
+                if (avgMemoryElement) avgMemoryElement.textContent = `${avgMemory}%`;
+                if (avgDiskElement) avgDiskElement.textContent = `${avgDisk}%`;
+                
+            } catch (error) {
+                console.error('Error updating system metrics summary:', error);
             }
         }
 
@@ -2690,6 +3062,203 @@
             } catch (error) {
                 console.error('Error populating agent filter:', error);
             }
+        }
+
+        async function populateMetricsAgentFilter() {
+            try {
+                const response = await fetch('/api/v1/agents');
+                const agents = await response.json();
+                
+                const select = document.getElementById('metrics-agent-filter');
+                const noAgentsMessage = document.getElementById('no-agents-message');
+                
+                if (!select) return;
+                
+                // Clear existing options except the first one (All Agents)
+                select.innerHTML = '<option value="">All Agents (Average)</option>';
+                
+                if (agents.length === 0) {
+                    // Show no agents message
+                    if (noAgentsMessage) {
+                        noAgentsMessage.style.display = 'block';
+                    }
+                    select.disabled = true;
+                    return;
+                } else {
+                    // Hide no agents message
+                    if (noAgentsMessage) {
+                        noAgentsMessage.style.display = 'none';
+                    }
+                    select.disabled = false;
+                }
+                
+                // Populate with agents
+                agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    option.textContent = `${agent.hostname} (${agent.is_online ? 'Online' : 'Offline'})`;
+                    if (!agent.is_online) {
+                        option.disabled = true;
+                        option.textContent += ' - No data';
+                    }
+                    select.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error('Error populating metrics agent filter:', error);
+                const select = document.getElementById('metrics-agent-filter');
+                const noAgentsMessage = document.getElementById('no-agents-message');
+                
+                if (select) select.disabled = true;
+                if (noAgentsMessage) {
+                    noAgentsMessage.style.display = 'block';
+                    noAgentsMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error loading agents';
+                }
+            }
+        }
+
+        function onMetricsFilterChange() {
+            const select = document.getElementById('metrics-agent-filter');
+            const selectedValue = select.value;
+            const selectedText = select.options[select.selectedIndex].text;
+            const historicalContainer = document.getElementById('historical-metrics-container');
+            const historicalTitle = document.getElementById('historical-chart-title');
+            
+            // Update chart titles based on selection
+            const chartTitle = document.getElementById('metrics-chart-title');
+            const summaryTitle = document.getElementById('metrics-summary-title');
+            
+            if (selectedValue) {
+                // Individual agent selected
+                const agentName = selectedText.split(' (')[0]; // Extract just the hostname
+                if (chartTitle) chartTitle.textContent = `${agentName} Metrics`;
+                if (summaryTitle) summaryTitle.textContent = `${agentName} Resource Usage`;
+                if (historicalTitle) historicalTitle.textContent = `${agentName} Historical Trends`;
+                
+                // Show historical chart
+                if (historicalContainer) {
+                    historicalContainer.style.display = 'block';
+                    // Initialize historical chart if not exists
+                    if (!historicalChart) {
+                        initializeHistoricalChart();
+                    }
+                    updateHistoricalChart();
+                }
+                
+                // Update metric titles to be singular
+                const cpuTitle = document.querySelector('#avg-cpu').parentElement.querySelector('.metric-title');
+                const memTitle = document.querySelector('#avg-memory').parentElement.querySelector('.metric-title');
+                const diskTitle = document.querySelector('#avg-disk').parentElement.querySelector('.metric-title');
+                
+                if (cpuTitle) cpuTitle.textContent = 'CPU Usage';
+                if (memTitle) memTitle.textContent = 'Memory Usage';
+                if (diskTitle) diskTitle.textContent = 'Disk Usage';
+            } else {
+                // All agents selected
+                if (chartTitle) chartTitle.textContent = 'System Metrics Overview';
+                if (summaryTitle) summaryTitle.textContent = 'System Resource Summary';
+                
+                // Hide historical chart
+                if (historicalContainer) {
+                    historicalContainer.style.display = 'none';
+                }
+                
+                // Update metric titles to be average
+                const cpuTitle = document.querySelector('#avg-cpu').parentElement.querySelector('.metric-title');
+                const memTitle = document.querySelector('#avg-memory').parentElement.querySelector('.metric-title');
+                const diskTitle = document.querySelector('#avg-disk').parentElement.querySelector('.metric-title');
+                
+                if (cpuTitle) cpuTitle.textContent = 'Average CPU Usage';
+                if (memTitle) memTitle.textContent = 'Average Memory Usage';
+                if (diskTitle) diskTitle.textContent = 'Average Disk Usage';
+            }
+            
+            // Refresh charts with new filter
+            updateCharts();
+            updateSystemMetricsSummary();
+        }
+
+        async function populateNetworkAgentFilter() {
+            try {
+                const response = await fetch('/api/v1/agents');
+                const agents = await response.json();
+                
+                const select = document.getElementById('network-agent-filter');
+                const noAgentsMessage = document.getElementById('no-agents-network-message');
+                
+                if (!select) return;
+                
+                // Clear existing options except the first one
+                select.innerHTML = '<option value="">All Agents (Combined)</option>';
+                
+                if (agents.length === 0) {
+                    // Show no agents message
+                    if (noAgentsMessage) {
+                        noAgentsMessage.style.display = 'block';
+                    }
+                    select.disabled = true;
+                    return;
+                } else {
+                    // Hide no agents message
+                    if (noAgentsMessage) {
+                        noAgentsMessage.style.display = 'none';
+                    }
+                    select.disabled = false;
+                }
+                
+                // Populate with agents
+                agents.forEach(agent => {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    option.textContent = `${agent.hostname} (${agent.is_online ? 'Online' : 'Offline'})`;
+                    if (!agent.is_online) {
+                        option.disabled = true;
+                        option.textContent += ' - No data';
+                    }
+                    select.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error('Error populating network agent filter:', error);
+                const select = document.getElementById('network-agent-filter');
+                const noAgentsMessage = document.getElementById('no-agents-network-message');
+                
+                if (select) select.disabled = true;
+                if (noAgentsMessage) {
+                    noAgentsMessage.style.display = 'block';
+                    noAgentsMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error loading agents';
+                }
+            }
+        }
+
+        function onNetworkFilterChange() {
+            const select = document.getElementById('network-agent-filter');
+            const selectedValue = select.value;
+            const selectedText = select.options[select.selectedIndex].text;
+            
+            // Update chart titles based on selection
+            const overviewTitle = document.getElementById('network-overview-title');
+            const trafficTitle = document.getElementById('network-traffic-title');
+            const healthTitle = document.getElementById('network-health-title');
+            const interfacesTitle = document.getElementById('network-interfaces-title');
+            
+            if (selectedValue) {
+                // Individual agent selected
+                const agentName = selectedText.split(' (')[0]; // Extract just the hostname
+                if (overviewTitle) overviewTitle.textContent = `${agentName} Network Overview`;
+                if (trafficTitle) trafficTitle.textContent = `${agentName} Network Traffic`;
+                if (healthTitle) healthTitle.textContent = `${agentName} Network Health`;
+                if (interfacesTitle) interfacesTitle.textContent = `${agentName} Network Interfaces`;
+            } else {
+                // All agents selected
+                if (overviewTitle) overviewTitle.textContent = 'Network Overview';
+                if (trafficTitle) trafficTitle.textContent = 'Network Traffic';
+                if (healthTitle) healthTitle.textContent = 'Network Health Summary';
+                if (interfacesTitle) interfacesTitle.textContent = 'Network Interfaces';
+            }
+            
+            // Refresh network metrics with new filter
+            updateNetworkMetrics();
         }
 
         function clearAnalysisResults() {
@@ -3176,6 +3745,9 @@
 
                 const response = await fetch('/api/v1/agents');
                 const agents = await response.json();
+                
+                const selectedAgentId = document.getElementById('network-agent-filter') ? 
+                    document.getElementById('network-agent-filter').value : '';
 
                 let totalConnections = 0;
                 let totalLatency = 0;
@@ -3192,6 +3764,10 @@
 
                 for (const agent of agents) {
                     if (!agent.is_online) continue;
+                    
+                    // If agent filter is selected, only show that agent
+                    if (selectedAgentId && agent.id != selectedAgentId) continue;
+                    
                     try {
                         const metricsResponse = await fetch(`/api/v1/agents/${agent.id}/metrics/detailed?hours=72&limit=2`);
                         const metrics = await metricsResponse.json();

@@ -1,7 +1,7 @@
 ai_analysis_enabled: true
 ai_analysis_interval: 300
 collection_interval: 15
-mode: network_focus
+mode: balanced
 network:
   anomaly_detection: true
   bandwidth_monitoring: true
@@ -23,7 +23,7 @@ system:
   cpu_monitoring: true
   cpu_warning_threshold: 80.0
   disk_critical_threshold: 95.0
-  disk_monitoring: false
+  disk_monitoring: true
   disk_warning_threshold: 85.0
   enabled: true
   memory_critical_threshold: 95.0
@@ -32,4 +32,4 @@ system:
   monitor_top_processes: true
   process_cpu_threshold: 50.0
   process_memory_threshold: 20.0
-  process_monitoring: false
+  process_monitoring: true
