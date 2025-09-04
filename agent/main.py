@@ -191,13 +191,6 @@ class NetworkAgent:
                 'tcp': tcp_total,  # keep aggregate for backward compatibility
                 'total': len(connections_list),  # keep aggregate for backward compatibility
             }
-            # Pass through connection rate hints as part of system metrics (floats allowed)
-            if 'connection_rates' in raw_metrics:
-                system_conn_rates = raw_metrics['connection_rates'] or {}
-                # Add without overwriting existing keys
-                system_metrics['new_connections_per_s'] = system_conn_rates.get('new_connections_per_s', 0.0)
-                system_metrics['established_delta_per_s'] = system_conn_rates.get('established_delta_per_s', 0.0)
-            
             # Create bandwidth metrics from interface data
             bandwidth_dict = {}
             for iface_name, stats in interfaces_dict.items():
@@ -213,10 +206,16 @@ class NetworkAgent:
                 'memory_percent': sys_info.get('memory_percent', 0.0),
                 'disk_percent': sys_info.get('disk_usage', 0.0),
                 'uptime': sys_info.get('uptime', 0.0),
-                'load_1min': sys_info.get('load_average', {}).get('1min', 0.0),
-                'load_5min': sys_info.get('load_average', {}).get('5min', 0.0),
-                'load_15min': sys_info.get('load_average', {}).get('15min', 0.0)
+                'load_avg_1min': sys_info.get('load_average', {}).get('1min', 0.0),
+                'load_avg_5min': sys_info.get('load_average', {}).get('5min', 0.0),
+                'load_avg_15min': sys_info.get('load_average', {}).get('15min', 0.0)
             }
+
+            # Pass through connection rate hints as part of system metrics (floats allowed)
+            if 'connection_rates' in raw_metrics:
+                system_conn_rates = raw_metrics['connection_rates'] or {}
+                system_metrics['new_connections_per_s'] = system_conn_rates.get('new_connections_per_s', 0.0)
+                system_metrics['established_delta_per_s'] = system_conn_rates.get('established_delta_per_s', 0.0)
             
             # Use collector to get real latency metrics (keys match server schema)
             try:
@@ -261,10 +260,28 @@ class NetworkAgent:
                 'timestamp': str(time.time()),
                 'hostname': self.agent_info['hostname'],
                 'interfaces': {},
-                'connections': {'total': 0},
+                'connections': {
+                    'total_connections': 0,
+                    'tcp_established': 0,
+                    'tcp_listen': 0,
+                    'tcp_time_wait': 0,
+                    'tcp_close_wait': 0,
+                    'udp_connections': 0,
+                },
                 'bandwidth': {},
-                'system_metrics': {'cpu_percent': 0.0, 'memory_percent': 0.0, 'disk_percent': 0.0},
-                'latency_metrics': {'avg_ping': 0.0},
+                'system_metrics': {
+                    'cpu_percent': 0.0,
+                    'memory_percent': 0.0,
+                    'disk_percent': 0.0,
+                    'load_avg_1min': 0.0,
+                    'load_avg_5min': 0.0,
+                    'load_avg_15min': 0.0
+                },
+                'latency_metrics': {
+                    'google_dns_latency_ms': -1.0,
+                    'cloudflare_dns_latency_ms': -1.0,
+                    'local_gateway_latency_ms': -1.0
+                },
                 'packet_stats': {}
             }
     

@@ -36,6 +36,11 @@ class NetworkMonitoringConfig:
     packet_loss_warning_threshold: float = 1.0  # %
     packet_loss_critical_threshold: float = 5.0  # %
     bandwidth_spike_threshold: float = 200.0  # % increase from baseline
+    # Security thresholds
+    conn_rate_warning_threshold: float = 50.0  # new connections per second
+    conn_rate_critical_threshold: float = 200.0  # new connections per second
+    recv_rate_spike_factor: float = 3.0  # X times baseline
+    detect_arp_gateway_change: bool = True
 
 @dataclass
 class SystemMonitoringConfig:
