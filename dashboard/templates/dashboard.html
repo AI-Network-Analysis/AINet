@@ -1384,11 +1384,13 @@
                                     <th>Status</th>
                                     <th>Bytes Sent</th>
                                     <th>Bytes Received</th>
+                                    <th>Send MB/s</th>
+                                    <th>Recv MB/s</th>
                                     <th>Errors</th>
                                 </tr>
                             </thead>
                             <tbody id="interfaces-tbody">
-                                <tr><td colspan="5">Loading...</td></tr>
+                                <tr><td colspan="7">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -3203,7 +3205,7 @@
 
                             let totalSent = 0;
                             let totalRecv = 0;
-                            if (latest.interfaces) {
+                if (latest.interfaces) {
                                 for (const [ifaceName, iface] of Object.entries(latest.interfaces)) {
                                     const bytesSent = Number(iface.bytes_sent || 0);
                                     const bytesRecv = Number(iface.bytes_recv || 0);
@@ -3211,6 +3213,8 @@
                                     const packetsRecv = Number(iface.packets_recv || 0);
                                     const errIn = Number(iface.errors_in || 0);
                                     const errOut = Number(iface.errors_out || 0);
+                    const rateSentMBs = Number(iface.bytes_sent_rate || 0) / (1024 * 1024);
+                    const rateRecvMBs = Number(iface.bytes_recv_rate || 0) / (1024 * 1024);
 
                                     if (!interfaceData[ifaceName]) {
                                         interfaceData[ifaceName] = {
@@ -3219,7 +3223,9 @@
                                             packets_sent: 0,
                                             packets_recv: 0,
                                             errors_in: 0,
-                                            errors_out: 0,
+                        errors_out: 0,
+                        rate_sent_mbs: 0,
+                        rate_recv_mbs: 0,
                                             agents: []
                                         };
                                     }
@@ -3229,6 +3235,8 @@
                                     interfaceData[ifaceName].packets_recv += packetsRecv;
                                     interfaceData[ifaceName].errors_in += errIn;
                                     interfaceData[ifaceName].errors_out += errOut;
+                    interfaceData[ifaceName].rate_sent_mbs += isFinite(rateSentMBs) ? rateSentMBs : 0;
+                    interfaceData[ifaceName].rate_recv_mbs += isFinite(rateRecvMBs) ? rateRecvMBs : 0;
                                     if (!interfaceData[ifaceName].agents.includes(agent.hostname)) {
                                         interfaceData[ifaceName].agents.push(agent.hostname);
                                     }
@@ -3299,7 +3307,7 @@
             const tbody = document.getElementById('interfaces-tbody');
             tbody.innerHTML = '';
 
-            const entries = Object.entries(interfaceData);
+        const entries = Object.entries(interfaceData);
             if (entries.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5">No interface data available</td></tr>';
                 return;
@@ -3317,6 +3325,8 @@
                     </span></td>
                     <td>${formatBytes(Number(data.bytes_sent || 0))}</td>
                     <td>${formatBytes(Number(data.bytes_recv || 0))}</td>
+            <td>${Number(data.rate_sent_mbs || 0).toFixed(2)}</td>
+            <td>${Number(data.rate_recv_mbs || 0).toFixed(2)}</td>
                     <td>${totalErrors}</td>
                 `;
                 tbody.appendChild(row);

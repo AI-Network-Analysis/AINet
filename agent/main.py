@@ -191,10 +191,12 @@ class NetworkAgent:
                 'tcp': tcp_total,  # keep aggregate for backward compatibility
                 'total': len(connections_list),  # keep aggregate for backward compatibility
             }
-            # Pass through connection rate hints if present
+            # Pass through connection rate hints as part of system metrics (floats allowed)
             if 'connection_rates' in raw_metrics:
-                connections_dict['new_connections_per_s'] = raw_metrics['connection_rates'].get('new_connections_per_s', 0.0)
-                connections_dict['established_delta_per_s'] = raw_metrics['connection_rates'].get('established_delta_per_s', 0.0)
+                system_conn_rates = raw_metrics['connection_rates'] or {}
+                # Add without overwriting existing keys
+                system_metrics['new_connections_per_s'] = system_conn_rates.get('new_connections_per_s', 0.0)
+                system_metrics['established_delta_per_s'] = system_conn_rates.get('established_delta_per_s', 0.0)
             
             # Create bandwidth metrics from interface data
             bandwidth_dict = {}
