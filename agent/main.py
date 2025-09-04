@@ -165,6 +165,11 @@ class NetworkAgent:
                     interfaces_dict[iface_name] = {
                         'bytes_sent': stats.get('bytes_sent', 0),
                         'bytes_recv': stats.get('bytes_recv', 0),
+                        # Optional rate-based metrics (per second)
+                        'bytes_sent_rate': stats.get('bytes_sent_rate', 0),
+                        'bytes_recv_rate': stats.get('bytes_recv_rate', 0),
+                        'packets_sent_rate': stats.get('packets_sent_rate', 0),
+                        'packets_recv_rate': stats.get('packets_recv_rate', 0),
                         'packets_sent': stats.get('packets_sent', 0),
                         'packets_recv': stats.get('packets_recv', 0),
                         'errors_in': stats.get('errin', 0),
@@ -186,6 +191,10 @@ class NetworkAgent:
                 'tcp': tcp_total,  # keep aggregate for backward compatibility
                 'total': len(connections_list),  # keep aggregate for backward compatibility
             }
+            # Pass through connection rate hints if present
+            if 'connection_rates' in raw_metrics:
+                connections_dict['new_connections_per_s'] = raw_metrics['connection_rates'].get('new_connections_per_s', 0.0)
+                connections_dict['established_delta_per_s'] = raw_metrics['connection_rates'].get('established_delta_per_s', 0.0)
             
             # Create bandwidth metrics from interface data
             bandwidth_dict = {}

@@ -91,9 +91,11 @@ class EnhancedMetricsCollector:
             }
             self.system_monitor = SystemResourceMonitor(system_config)
         
-        # Store previous network stats for rate calculations
+        # Store previous network stats for rate calculations (used by _get_interface_metrics)
         self.previous_net_stats = {}
-        
+        # Track previous connection count and timestamp for connection rate
+        self._prev_conn_snapshot = {"ts": None, "total": 0, "established": 0}
+
         logger.info(f"Enhanced metrics collector initialized with mode: {self.config.mode.value}")
     
     def collect_all_metrics(self) -> Dict[str, Any]:
@@ -111,6 +113,11 @@ class EnhancedMetricsCollector:
             if self.config.mode in [MonitoringMode.NETWORK_FOCUS, MonitoringMode.BALANCED] if MonitoringMode else True:
                 interfaces = self._get_network_interfaces()
                 metrics['connections'] = self._get_network_connections()
+                # Compute connection rates for DoS signals
+                try:
+                    metrics['connection_rates'] = self._get_connection_rates(metrics['connections'])
+                except Exception:
+                    metrics['connection_rates'] = {"new_connections_per_s": 0.0, "established_delta_per_s": 0.0}
                 
                 for interface in interfaces:
                     metrics['interfaces'].append(self._get_interface_metrics(interface))
@@ -157,23 +164,24 @@ class EnhancedMetricsCollector:
         try:
             # Get interface addresses
             addresses = netifaces.ifaddresses(interface)
-            
-            # Get network statistics
+
+            # Get network statistics and ARP neighbors
             net_stats = psutil.net_io_counters(pernic=True).get(interface, None)
-            
-            metrics = {
+            arp_neighbors = self._get_arp_table().get(interface, [])
+
+            metrics: Dict[str, Any] = {
                 'interface': interface,
                 'addresses': addresses,
                 'is_up': interface in netifaces.interfaces(),
-                'statistics': {}
+                'statistics': {},
+                'arp_neighbors': arp_neighbors
             }
-            
+
             if net_stats:
-                # Calculate rates if we have previous stats
                 prev_stats = self.previous_net_stats.get(interface, {})
                 current_time = time.time()
-                
-                metrics['statistics'] = {
+
+                stats = {
                     'bytes_sent': net_stats.bytes_sent,
                     'bytes_recv': net_stats.bytes_recv,
                     'packets_sent': net_stats.packets_sent,
@@ -183,30 +191,56 @@ class EnhancedMetricsCollector:
                     'dropin': net_stats.dropin,
                     'dropout': net_stats.dropout
                 }
-                
-                # Calculate rates if we have previous data
+
+                # Rates
                 if prev_stats and 'timestamp' in prev_stats:
                     time_diff = current_time - prev_stats['timestamp']
                     if time_diff > 0:
-                        metrics['statistics']['bytes_sent_rate'] = (
-                            net_stats.bytes_sent - prev_stats.get('bytes_sent', 0)
-                        ) / time_diff
-                        metrics['statistics']['bytes_recv_rate'] = (
-                            net_stats.bytes_recv - prev_stats.get('bytes_recv', 0)
-                        ) / time_diff
-                
-                # Store current stats for next calculation
+                        stats['bytes_sent_rate'] = (net_stats.bytes_sent - prev_stats.get('bytes_sent', 0)) / time_diff
+                        stats['bytes_recv_rate'] = (net_stats.bytes_recv - prev_stats.get('bytes_recv', 0)) / time_diff
+                        stats['packets_sent_rate'] = (net_stats.packets_sent - prev_stats.get('packets_sent', 0)) / time_diff
+                        stats['packets_recv_rate'] = (net_stats.packets_recv - prev_stats.get('packets_recv', 0)) / time_diff
+
+                metrics['statistics'] = stats
+
+                # Update snapshot
                 self.previous_net_stats[interface] = {
                     'timestamp': current_time,
                     'bytes_sent': net_stats.bytes_sent,
-                    'bytes_recv': net_stats.bytes_recv
+                    'bytes_recv': net_stats.bytes_recv,
+                    'packets_sent': net_stats.packets_sent,
+                    'packets_recv': net_stats.packets_recv
                 }
-            
+
             return metrics
-            
+
         except Exception as e:
             logger.warning(f"Error getting metrics for interface {interface}: {e}")
             return {'interface': interface, 'error': str(e)}
+
+    def _get_arp_table(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Parse ARP table and return neighbors per interface.
+
+        Returns: { iface: [ { ip, mac, flags }, ... ] }
+        """
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        try:
+            if os.path.exists('/proc/net/arp'):
+                with open('/proc/net/arp', 'r') as f:
+                    lines = f.read().strip().splitlines()
+                # Skip header
+                for line in lines[1:]:
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        ip, hw_type, flags, mac, mask, dev = parts[:6]
+                        result.setdefault(dev, []).append({
+                            'ip': ip,
+                            'mac': mac,
+                            'flags': flags
+                        })
+        except Exception:
+            pass
+        return result
 
     def _get_network_connections(self) -> List[Dict[str, Any]]:
         """Get current network connections."""
@@ -225,6 +259,31 @@ class EnhancedMetricsCollector:
         except Exception as e:
             logger.warning(f"Error getting network connections: {e}")
             return []
+
+    def _get_connection_rates(self, connections_list: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Compute connection rates per second using previous snapshot.
+
+        Returns keys: new_connections_per_s, established_delta_per_s
+        """
+        try:
+            now = time.time()
+            total = len(connections_list)
+            established = sum(1 for c in connections_list if c.get('status') == 'ESTABLISHED')
+
+            prev = self._prev_conn_snapshot
+            rate = {"new_connections_per_s": 0.0, "established_delta_per_s": 0.0}
+            if prev["ts"] is not None:
+                dt = max(0.0, now - prev["ts"])
+                if dt > 0:
+                    rate["new_connections_per_s"] = max(0.0, (total - prev["total"]) / dt)
+                    rate["established_delta_per_s"] = (established - prev["established"]) / dt
+
+            # Update snapshot
+            self._prev_conn_snapshot = {"ts": now, "total": total, "established": established}
+            return rate
+        except Exception as e:
+            logger.debug(f"Failed to compute connection rates: {e}")
+            return {"new_connections_per_s": 0.0, "established_delta_per_s": 0.0}
     
     def _collect_network_metrics(self) -> Dict[str, Any]:
         """Collect network-specific metrics"""
@@ -238,6 +297,13 @@ class EnhancedMetricsCollector:
         # Collect connection stats if enabled
         if self.config.network.connection_monitoring:
             network_data['connections'] = self.collect_connection_stats()
+            # Also include connection rate estimates for DoS detection
+            try:
+                # Use fresh list to compute delta safely
+                conn_list = self._get_network_connections()
+                network_data['connection_rates'] = self._get_connection_rates(conn_list)
+            except Exception:
+                network_data['connection_rates'] = {"new_connections_per_s": 0.0, "established_delta_per_s": 0.0}
         
         # Collect latency metrics if enabled
         if self.config.network.latency_monitoring:
@@ -460,7 +526,7 @@ class EnhancedMetricsCollector:
                 'drops_out': net_stats.dropout
             }
             
-            # Calculate error rates
+            # Calculate error/drop rates and packet rates (per second) using previous snapshot
             total_packets = net_stats.packets_sent + net_stats.packets_recv
             if total_packets > 0:
                 packet_stats['overall']['error_rate'] = (
@@ -472,6 +538,37 @@ class EnhancedMetricsCollector:
             else:
                 packet_stats['overall']['error_rate'] = 0
                 packet_stats['overall']['drop_rate'] = 0
+
+            # Interface-level packet rates piggyback on collect_bandwidth_stats
+            try:
+                pernic = psutil.net_io_counters(pernic=True)
+                now = time.time()
+                if not hasattr(self, '_prev_packet_pernic'):
+                    self._prev_packet_pernic = {}
+                for nic, s in pernic.items():
+                    prev = self._prev_packet_pernic.get(nic)
+                    if prev:
+                        dt = max(0.0, now - prev['ts'])
+                        if dt > 0:
+                            packet_stats[nic] = {
+                                'packets_sent_rate': int((s.packets_sent - prev['packets_sent']) / dt),
+                                'packets_recv_rate': int((s.packets_recv - prev['packets_recv']) / dt),
+                                'errors_in_rate': int((s.errin - prev['errin']) / dt),
+                                'errors_out_rate': int((s.errout - prev['errout']) / dt),
+                                'drops_in_rate': int((s.dropin - prev['dropin']) / dt),
+                                'drops_out_rate': int((s.dropout - prev['dropout']) / dt),
+                            }
+                    self._prev_packet_pernic[nic] = {
+                        'ts': now,
+                        'packets_sent': s.packets_sent,
+                        'packets_recv': s.packets_recv,
+                        'errin': s.errin,
+                        'errout': s.errout,
+                        'dropin': s.dropin,
+                        'dropout': s.dropout,
+                    }
+            except Exception:
+                pass
                 
         except Exception as e:
             logger.error(f"Error collecting packet stats: {e}")
