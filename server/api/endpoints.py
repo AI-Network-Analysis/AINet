@@ -253,6 +253,150 @@ async def receive_metrics(
         
         db.add(network_metric)
         db.commit()
+
+        # Simple DoS/MITM-lite alerting
+        try:
+            from ..ai_engine.chat_agent import local_now
+            # Load config thresholds from monitoring config
+            try:
+                from config.monitoring_config import ConfigurationManager
+                _cfg = ConfigurationManager().get_config()
+                conn_warn = float(_cfg.network.conn_rate_warning_threshold)
+                conn_crit = float(_cfg.network.conn_rate_critical_threshold)
+                recv_spike_factor = float(_cfg.network.recv_rate_spike_factor)
+                detect_arp_change = bool(_cfg.network.detect_arp_gateway_change)
+            except Exception:
+                # Safe fallbacks
+                conn_warn = 50.0
+                conn_crit = 200.0
+                recv_spike_factor = 3.0
+                detect_arp_change = True
+
+            # 1) Connection rate alert
+            new_cps = None
+            try:
+                new_cps = metrics.system_metrics.get('new_connections_per_s')
+            except Exception:
+                pass
+            if isinstance(new_cps, (int, float)) and new_cps is not None:
+                severity = None
+                if new_cps >= conn_crit:
+                    severity = 'critical'
+                elif new_cps >= conn_warn:
+                    severity = 'high'
+                if severity:
+                    alert = Alert(
+                        agent_id=agent.id,
+                        timestamp=local_now(),
+                        alert_type='dos_suspected',
+                        severity=severity,
+                        title='High connection rate detected',
+                        description=f'new_connections_per_s={new_cps:.2f} (warn>{conn_warn}, crit>{conn_crit})',
+                        metric_name='new_connections_per_s',
+                        metric_value=float(new_cps),
+                        anomaly_score=None,
+                        status='active',
+                        context={'thresholds': {'warn': conn_warn, 'crit': conn_crit}}
+                    )
+                    db.add(alert)
+
+            # 2) Receive rate spike vs baseline (simple moving avg of last 10)
+            try:
+                # Compute aggregate recv rate from interfaces if present
+                agg_recv_rate = 0.0
+                if isinstance(metrics.interfaces, dict):
+                    for val in metrics.interfaces.values():
+                        v = val.get('bytes_recv_rate')
+                        if isinstance(v, (int, float)):
+                            agg_recv_rate += float(v)
+
+                # Get previous 10 metrics for baseline
+                prev_metrics = (
+                    db.query(NetworkMetric)
+                    .filter(NetworkMetric.agent_id == agent.id)
+                    .order_by(NetworkMetric.timestamp.desc())
+                    .limit(10)
+                    .all()
+                )
+                baseline = 0.0
+                count = 0
+                for m in prev_metrics:
+                    if isinstance(m.interfaces, dict):
+                        r = 0.0
+                        for val in m.interfaces.values():
+                            v = (val or {}).get('bytes_recv_rate')
+                            if isinstance(v, (int, float)):
+                                r += float(v)
+                        baseline += r
+                        count += 1
+                baseline = (baseline / count) if count > 0 else 0.0
+                if baseline > 0 and agg_recv_rate > baseline * float(recv_spike_factor):
+                    alert = Alert(
+                        agent_id=agent.id,
+                        timestamp=local_now(),
+                        alert_type='bandwidth_spike',
+                        severity='high',
+                        title='High receive bandwidth spike',
+                        description=f'bytes_recv_rate agg={agg_recv_rate:.0f}B/s baseline~{baseline:.0f}B/s factor>{recv_spike_factor}',
+                        metric_name='bytes_recv_rate',
+                        metric_value=float(agg_recv_rate),
+                        anomaly_score=None,
+                        status='active',
+                        context={'baseline': baseline, 'factor': recv_spike_factor}
+                    )
+                    db.add(alert)
+            except Exception:
+                pass
+
+            # 3) ARP gateway MAC change: compare last two raw_data snapshots
+            try:
+                if detect_arp_change and isinstance(metrics.interfaces, dict):
+                    # Get previous metric for this agent
+                    prev = (
+                        db.query(NetworkMetric)
+                        .filter(NetworkMetric.agent_id == agent.id, NetworkMetric.id != network_metric.id)
+                        .order_by(NetworkMetric.timestamp.desc())
+                        .first()
+                    )
+                    def gateway_mac_from_interfaces(intf_map):
+                        # Heuristic: list arp_neighbors for any iface; pick entry where IP equals default gateway from latency metrics if present
+                        if not isinstance(intf_map, dict):
+                            return None
+                        # Flatten neighbors
+                        for val in intf_map.values():
+                            neigh = (val or {}).get('arp_neighbors')
+                            if isinstance(neigh, list):
+                                # If any entry has flags '0x2' it is a complete entry
+                                for n in neigh:
+                                    if isinstance(n, dict) and n.get('mac') and n.get('flags'):
+                                        return n.get('mac')
+                        return None
+                    prev_mac = gateway_mac_from_interfaces(prev.interfaces) if prev else None
+                    curr_mac = gateway_mac_from_interfaces(metrics.interfaces)
+                    if prev_mac and curr_mac and prev_mac != curr_mac:
+                        alert = Alert(
+                            agent_id=agent.id,
+                            timestamp=local_now(),
+                            alert_type='arp_gateway_change',
+                            severity='high',
+                            title='Gateway MAC address changed',
+                            description=f'Previous MAC {prev_mac} -> Current MAC {curr_mac}',
+                            metric_name='arp_gateway_mac',
+                            metric_value=None,
+                            anomaly_score=None,
+                            status='active',
+                            context={'prev_mac': prev_mac, 'curr_mac': curr_mac}
+                        )
+                        db.add(alert)
+
+            except Exception:
+                pass
+
+            # Commit alerts (if any)
+            db.commit()
+        except Exception:
+            # Non-fatal; metrics are stored even if alerts fail
+            pass
         
         logger.debug(f"Stored metrics for agent {metrics.hostname}")
         
@@ -804,23 +948,20 @@ async def get_chat_status():
     """Get the status of the chat agent system"""
     try:
         from ..ai_engine.chat_agent import AINetChatAgent
-        from ..main import app_config
-        
+        from ..main import config as app_config
+
         # Test agent initialization
         chat_agent = AINetChatAgent(app_config)
-        
+
         return {
             "status": "online",
             "available_tools": [tool.name for tool in chat_agent.tools],
             "model": chat_agent.llm.model,
-            "temperature": chat_agent.llm.temperature
+            "temperature": chat_agent.llm.temperature,
         }
     except Exception as e:
         logger.error(f"Error checking chat status: {e}")
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        return {"status": "error", "error": str(e)}
 
 @api_router.get("/chat/conversations")
 async def get_chat_conversations(db: Session = Depends(get_db)):

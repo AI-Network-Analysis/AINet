@@ -1371,6 +1371,13 @@
                                     <div class="metric-value" id="network-anomalies">--</div>
                                 </div>
                             </div>
+                            <div class="metric-card">
+                                <div class="metric-icon"><i class="fas fa-bolt"></i></div>
+                                <div class="metric-info">
+                                    <div class="metric-title">Conn rate (avg/max)</div>
+                                    <div class="metric-value" id="conn-rate">--</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3176,6 +3183,8 @@
                 let tcpEstablished = 0;
                 let tcpListen = 0;
                 let udpConnections = 0;
+                let connRateSum = 0;
+                let connRateMax = 0;
 
                 const interfaceData = {};
                 let aggRateSentMBs = 0;
@@ -3262,6 +3271,19 @@
                                     aggRateSentMBs += rateSentMBs;
                                     aggRateRecvMBs += rateRecvMBs;
                                 }
+                                // Derive new connections per second if provided or fallback using total_connections delta
+                                let newConnPerS = undefined;
+                                // Prefer directly provided metric in system_metrics if embedded in interfaces payload via raw_data (server reduces out for dashboard). Try both latest.raw_data and latest.packet_stats/system metrics are not returned here; so fallback using delta of total_connections.
+                                const latestTotalConn = Number(latest.total_connections || 0);
+                                const prevTotalConn = Number(prev.total_connections || 0);
+                                if (dt > 0) {
+                                    const deltaConn = latestTotalConn - prevTotalConn;
+                                    newConnPerS = deltaConn / dt;
+                                }
+                                if (isFinite(newConnPerS)) {
+                                    connRateSum += Math.max(0, newConnPerS);
+                                    connRateMax = Math.max(connRateMax, Math.max(0, newConnPerS));
+                                }
                             }
                         }
                     } catch (error) {
@@ -3273,6 +3295,10 @@
                 document.getElementById('avg-latency').textContent = agentCount > 0 ? `${(totalLatency / agentCount).toFixed(1)} ms` : '-- ms';
                 document.getElementById('total-connections').textContent = totalConnections;
                 document.getElementById('network-anomalies').textContent = 0;
+                const avgConnRate = agentCount > 0 ? (connRateSum / agentCount) : 0;
+                const connRateText = agentCount > 0 ? `${avgConnRate.toFixed(2)} / ${connRateMax.toFixed(2)} /s` : '--';
+                const connRateEl = document.getElementById('conn-rate');
+                if (connRateEl) connRateEl.textContent = connRateText;
 
                 // Update network overview chart
                 if (networkOverviewChart && networkOverviewChart.data && networkOverviewChart.data.datasets && networkOverviewChart.data.datasets[0]) {

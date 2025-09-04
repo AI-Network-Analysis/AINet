@@ -358,6 +358,90 @@ def get_interface_stats(agent_hostname: str, hours: int = 6, top_n: int = 5) -> 
         return {"success": False, "message": f"Failed to get interface stats: {str(e)}"}
 
 @tool
+def get_threat_summary(agent_hostname: str, hours: int = 1) -> Dict[str, Any]:
+    """Summarize recent network threats/signals for an agent in the last N hours.
+
+    Reports:
+    - Peak new connections per second (approx from total_connections delta)
+    - Receive bandwidth spikes (vs. simple baseline)
+    - ARP gateway MAC change alerts
+    """
+    try:
+        db_manager = get_db_manager()
+        with db_manager.get_session() as db:
+            agent = db.query(Agent).filter(Agent.hostname == agent_hostname).first()
+            if not agent:
+                return {"success": False, "message": f"Agent '{agent_hostname}' not found"}
+
+            since_time = local_now() - timedelta(hours=hours)
+            metrics = (
+                db.query(NetworkMetric)
+                .filter(NetworkMetric.agent_id == agent.id, NetworkMetric.timestamp >= since_time)
+                .order_by(NetworkMetric.timestamp.asc())
+                .all()
+            )
+
+            peak_new_cps = 0.0
+            recv_rates = []
+            # Compute per-sample agg recv rate and new connections per second
+            for i in range(1, len(metrics)):
+                prev = metrics[i-1]
+                cur = metrics[i]
+                dt = (cur.timestamp - prev.timestamp).total_seconds() if cur.timestamp and prev.timestamp else 0
+                if dt <= 0:
+                    continue
+                # New connections per second via total_connections delta
+                prev_tc = float(prev.total_connections or 0)
+                cur_tc = float(cur.total_connections or 0)
+                new_cps = max(0.0, (cur_tc - prev_tc) / dt)
+                peak_new_cps = max(peak_new_cps, new_cps)
+
+                # Aggregate recv byte rate from interfaces
+                agg_prev = 0.0
+                agg_cur = 0.0
+                if isinstance(prev.interfaces, dict):
+                    for v in prev.interfaces.values():
+                        agg_prev += float((v or {}).get('bytes_recv', 0) or 0)
+                if isinstance(cur.interfaces, dict):
+                    for v in cur.interfaces.values():
+                        agg_cur += float((v or {}).get('bytes_recv', 0) or 0)
+                recv_rate = max(0.0, (agg_cur - agg_prev) / dt)
+                recv_rates.append(recv_rate)
+
+            # Baseline and spike detection
+            baseline = sum(recv_rates[:-1]) / max(1, len(recv_rates[:-1])) if len(recv_rates) > 1 else (sum(recv_rates) / max(1, len(recv_rates)))
+            latest_rate = recv_rates[-1] if recv_rates else 0.0
+            spike_factor = (latest_rate / baseline) if baseline > 0 else 0.0
+
+            # Recent ARP gateway change alerts
+            alerts = (
+                db.query(Alert)
+                .filter(Alert.agent_id == agent.id, Alert.alert_type == 'arp_gateway_change', Alert.timestamp >= since_time)
+                .order_by(Alert.timestamp.desc())
+                .all()
+            )
+
+            return {
+                "success": True,
+                "agent_hostname": agent_hostname,
+                "time_window_hours": hours,
+                "peak_new_connections_per_s": round(peak_new_cps, 2),
+                "recv_rate_latest_Bps": round(latest_rate, 1),
+                "recv_baseline_Bps": round(baseline, 1),
+                "recv_spike_factor": round(spike_factor, 2) if baseline > 0 else None,
+                "arp_gateway_change_alerts": [
+                    {
+                        "timestamp": a.timestamp.isoformat(),
+                        "severity": a.severity,
+                        "title": a.title,
+                        "description": a.description,
+                    } for a in alerts
+                ]
+            }
+    except Exception as e:
+        logger.error(f"Error in get_threat_summary for {agent_hostname}: {e}")
+        return {"success": False, "message": f"Failed to get threat summary: {str(e)}"}
+@tool
 def get_recent_alerts(hours: int = 24, severity: Optional[str] = None) -> AlertsResponse:
     """Get recent alerts from the system.
     
@@ -677,6 +761,7 @@ class AINetChatAgent:
             trigger_agent_analysis,
             get_network_overview,
             get_interface_stats,
+            get_threat_summary,
         ]
         
         # Create tool node

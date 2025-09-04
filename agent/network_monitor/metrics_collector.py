@@ -131,8 +131,12 @@ class EnhancedMetricsCollector:
                     anomalies = self.network_detector.analyze_network_metrics(network_data)
                     metrics['network_anomalies'] = [asdict(anomaly) for anomaly in anomalies]
             
-            # Collect system data if in system mode or both
-            if self.config.mode in [MonitoringMode.SYSTEM_FOCUS, MonitoringMode.BALANCED] if MonitoringMode else True:
+            # Collect system data whenever system monitoring is enabled (independent of mode)
+            try:
+                system_enabled = getattr(self.config, 'system', None) and getattr(self.config.system, 'enabled', True)
+            except Exception:
+                system_enabled = True
+            if system_enabled:
                 metrics['system_info'] = self._get_system_info()
                 
                 # Collect system anomalies if monitor is available
