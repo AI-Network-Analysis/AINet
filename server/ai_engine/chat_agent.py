@@ -198,6 +198,165 @@ def get_agent_metrics(agent_hostname: str, hours: int = 24) -> MetricsResponse:
             time_range=f"last {hours} hours",
         )
 
+# New network-focused tools
+@tool
+def get_network_overview(agent_hostname: str, hours: int = 24) -> Dict[str, Any]:
+    """Get a high-level network overview for an agent: connection breakdown and average latencies.
+
+    Args:
+        agent_hostname: The agent hostname
+        hours: Time window for averaging latencies and scanning metrics (default: 24)
+    """
+    try:
+        db_manager = get_db_manager()
+        with db_manager.get_session() as db:
+            agent = db.query(Agent).filter(Agent.hostname == agent_hostname).first()
+            if not agent:
+                return {
+                    "success": False,
+                    "message": f"Agent '{agent_hostname}' not found"
+                }
+
+            since_time = local_now() - timedelta(hours=hours)
+            metrics = (
+                db.query(NetworkMetric)
+                .filter(NetworkMetric.agent_id == agent.id, NetworkMetric.timestamp >= since_time)
+                .order_by(NetworkMetric.timestamp.desc())
+                .all()
+            )
+
+            if not metrics:
+                return {
+                    "success": True,
+                    "agent_hostname": agent_hostname,
+                    "connection_breakdown": {},
+                    "latest_total_connections": 0,
+                    "avg_latencies_ms": {},
+                    "message": "No metrics in the selected time window"
+                }
+
+            latest = metrics[0]
+            breakdown = {
+                "tcp_established": int(latest.tcp_established or 0),
+                "tcp_listen": int(latest.tcp_listen or 0),
+                "tcp_time_wait": int(latest.tcp_time_wait or 0),
+                "tcp_close_wait": int(latest.tcp_close_wait or 0),
+                "udp_connections": int(latest.udp_connections or 0)
+            }
+
+            # Average latencies over available points in window
+            lat_g_vals = [m.google_dns_latency_ms for m in metrics if isinstance(m.google_dns_latency_ms, (int, float))]
+            lat_cf_vals = [m.cloudflare_dns_latency_ms for m in metrics if isinstance(m.cloudflare_dns_latency_ms, (int, float))]
+            lat_gw_vals = [m.local_gateway_latency_ms for m in metrics if isinstance(m.local_gateway_latency_ms, (int, float))]
+
+            def avg(vals: List[float]) -> Optional[float]:
+                return round(sum(vals) / len(vals), 2) if vals else None
+
+            avg_latencies = {
+                "google_dns": avg(lat_g_vals),
+                "cloudflare_dns": avg(lat_cf_vals),
+                "local_gateway": avg(lat_gw_vals),
+            }
+
+            return {
+                "success": True,
+                "agent_hostname": agent_hostname,
+                "timestamp": latest.timestamp.isoformat() if latest.timestamp else None,
+                "latest_total_connections": int(latest.total_connections or 0),
+                "connection_breakdown": breakdown,
+                "avg_latencies_ms": avg_latencies,
+            }
+    except Exception as e:
+        logger.error(f"Error in get_network_overview for {agent_hostname}: {e}")
+        return {"success": False, "message": f"Failed to get network overview: {str(e)}"}
+
+
+@tool
+def get_interface_stats(agent_hostname: str, hours: int = 6, top_n: int = 5) -> Dict[str, Any]:
+    """Get per-interface traffic rates (MB/s) using the last two samples in the time window.
+
+    Args:
+        agent_hostname: Agent hostname
+        hours: Time window to search for samples (default: 6)
+        top_n: Number of top interfaces to return by combined rate (default: 5)
+    """
+    try:
+        db_manager = get_db_manager()
+        with db_manager.get_session() as db:
+            agent = db.query(Agent).filter(Agent.hostname == agent_hostname).first()
+            if not agent:
+                return {"success": False, "message": f"Agent '{agent_hostname}' not found"}
+
+            since_time = local_now() - timedelta(hours=hours)
+            # Get just the last two points for efficiency
+            metrics = (
+                db.query(NetworkMetric)
+                .filter(NetworkMetric.agent_id == agent.id, NetworkMetric.timestamp >= since_time)
+                .order_by(NetworkMetric.timestamp.desc())
+                .limit(2)
+                .all()
+            )
+
+            if not metrics:
+                return {
+                    "success": True,
+                    "agent_hostname": agent_hostname,
+                    "interfaces": [],
+                    "message": "No interface data in the selected window"
+                }
+
+            latest = metrics[0]
+            prev = metrics[1] if len(metrics) > 1 else None
+
+            def mb_per_s(delta_bytes: float, seconds: float) -> float:
+                if seconds <= 0:
+                    return 0.0
+                return round(max(0.0, delta_bytes) / seconds / (1024 * 1024), 3)
+
+            rates = []
+            if isinstance(latest.interfaces, dict):
+                for name, iface in latest.interfaces.items():
+                    try:
+                        latest_sent = float(iface.get("bytes_sent", 0) or 0)
+                        latest_recv = float(iface.get("bytes_recv", 0) or 0)
+
+                        prev_sent = 0.0
+                        prev_recv = 0.0
+                        seconds = 0.0
+                        if prev and isinstance(prev.interfaces, dict) and name in prev.interfaces:
+                            prev_if = prev.interfaces.get(name) or {}
+                            prev_sent = float(prev_if.get("bytes_sent", 0) or 0)
+                            prev_recv = float(prev_if.get("bytes_recv", 0) or 0)
+                            seconds = max(0.0, (latest.timestamp - prev.timestamp).total_seconds()) if latest.timestamp and prev.timestamp else 0.0
+
+                        rate_sent = mb_per_s(latest_sent - prev_sent, seconds)
+                        rate_recv = mb_per_s(latest_recv - prev_recv, seconds)
+                        combined = round(rate_sent + rate_recv, 3)
+
+                        rates.append({
+                            "interface": name,
+                            "rate_sent_mb_s": rate_sent,
+                            "rate_recv_mb_s": rate_recv,
+                            "rate_total_mb_s": combined
+                        })
+                    except Exception:
+                        # Skip malformed interface entries
+                        continue
+
+            # Sort and trim
+            rates.sort(key=lambda x: x.get("rate_total_mb_s", 0), reverse=True)
+            rates = rates[: max(1, int(top_n))]
+
+            return {
+                "success": True,
+                "agent_hostname": agent_hostname,
+                "timestamp": latest.timestamp.isoformat() if latest.timestamp else None,
+                "interfaces": rates,
+            }
+    except Exception as e:
+        logger.error(f"Error in get_interface_stats for {agent_hostname}: {e}")
+        return {"success": False, "message": f"Failed to get interface stats: {str(e)}"}
+
 @tool
 def get_recent_alerts(hours: int = 24, severity: Optional[str] = None) -> AlertsResponse:
     """Get recent alerts from the system.
@@ -515,7 +674,9 @@ class AINetChatAgent:
             get_recent_alerts,
             get_analysis_results,
             get_analysis_details,
-            trigger_agent_analysis
+            trigger_agent_analysis,
+            get_network_overview,
+            get_interface_stats,
         ]
         
         # Create tool node
