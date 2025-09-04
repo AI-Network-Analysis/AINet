@@ -1138,13 +1138,51 @@
             border-radius: 12px;
             overflow: hidden;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            table-layout: fixed;
         }
 
         .interface-table th,
         .interface-table td {
-            padding: 16px 14px;
+            padding: 16px 12px;
             text-align: left;
             border-bottom: 1px solid rgba(224, 224, 224, 0.6);
+            word-wrap: break-word;
+            overflow: hidden;
+        }
+
+        .interface-table th:nth-child(1),
+        .interface-table td:nth-child(1) {
+            width: 15%;
+        }
+
+        .interface-table th:nth-child(2),
+        .interface-table td:nth-child(2) {
+            width: 12%;
+        }
+
+        .interface-table th:nth-child(3),
+        .interface-table td:nth-child(3) {
+            width: 18%;
+        }
+
+        .interface-table th:nth-child(4),
+        .interface-table td:nth-child(4) {
+            width: 18%;
+        }
+
+        .interface-table th:nth-child(5),
+        .interface-table td:nth-child(5) {
+            width: 14%;
+        }
+
+        .interface-table th:nth-child(6),
+        .interface-table td:nth-child(6) {
+            width: 14%;
+        }
+
+        .interface-table th:nth-child(7),
+        .interface-table td:nth-child(7) {
+            width: 9%;
         }
 
         .interface-table th {
@@ -1718,7 +1756,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="card">
+                <div class="card" style="grid-column: 1 / -1; max-width: none;">
                     <h3><i class="fas fa-list"></i> <span id="network-interfaces-title">Network Interfaces</span></h3>
                     <div id="network-interfaces-table">
                         <table class="interface-table">
