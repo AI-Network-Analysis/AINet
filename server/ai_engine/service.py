@@ -70,11 +70,13 @@ class AIEngineService:
                 logger.info(f"Starting AI analysis for agent {agent.hostname} with {len(raw_metrics)} data points")
                 
                 # Create AI analysis record
+                from os import getenv
+                model_used = getenv('VERTEX_TUNED_MODEL') or self.config.get('ai', {}).get('model_name', 'unknown')
                 ai_analysis = AIAnalysis(
                     agent_id=agent_id,
                     timestamp=local_now(),
                     analysis_type="anomaly_detection",
-                    model_used=self.config.get('ai', {}).get('model_name', 'gpt-4'),
+                    model_used=model_used,
                     status="pending",
                     data_points_analyzed=len(raw_metrics)
                 )

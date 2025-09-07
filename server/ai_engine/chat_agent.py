@@ -13,7 +13,7 @@ def local_now():
     """Return current local time instead of UTC"""
     return datetime.now()
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from server.ai_engine.llm_provider import build_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
@@ -741,15 +741,11 @@ class AINetChatAgent:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        
-        # Initialize LLM with Google GenAI
-        ai_config = config.get('ai', {})
-        self.llm = ChatGoogleGenerativeAI(
-            model=ai_config.get('model_name', 'gemini-2.5-flash'),
-            temperature=ai_config.get('temperature', 0.1),
-            max_output_tokens=ai_config.get('max_tokens', 1000)
-        )
-        
+
+        # Initialize LLM via provider (supports Vertex tuned models via env)
+        ai_config = self.config.get('ai', {})
+        self.llm = build_chat_model(ai_config)
+
         # Define available tools
         self.tools = [
             get_system_status,
@@ -763,22 +759,22 @@ class AINetChatAgent:
             get_interface_stats,
             get_threat_summary,
         ]
-        
+
         # Create tool node
         self.tool_node = ToolNode(self.tools)
-        
+
         # Bind tools to LLM
         self.llm_with_tools = self.llm.bind_tools(self.tools)
-        
+
         # Initialize memory for conversation history
         self.memory = MemorySaver()
-        
+
         # Initialize database checkpointer for persistence
         self.db_checkpointer = SQLAlchemyCheckpointer()
-        
+
         # Create the graph
         self.graph = self._create_graph()
-        
+
         # Load existing conversation state if available
         self._conversation_cache = {}
     

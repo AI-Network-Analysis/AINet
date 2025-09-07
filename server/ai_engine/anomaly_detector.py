@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, TypedDict
 import numpy as np
 from dataclasses import dataclass, asdict
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from server.ai_engine.llm_provider import build_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, PydanticOutputParser
@@ -94,13 +94,9 @@ class AnomalyDetector:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         
-        # Initialize LLM
-        model_config = config.get('ai', {})
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_config.get('model_name', 'gemini-2.5-flash'),
-            temperature=model_config.get('temperature', 0.1),
-            max_output_tokens=model_config.get('max_tokens', 1000)
-        )
+        # Initialize LLM via provider (supports Vertex tuned models via env)
+        model_config = self.config.get('ai', {})
+        self.llm = build_chat_model(model_config)
         
         # Configure analysis parameters
         self.window_size = model_config.get('anomaly_detection', {}).get('window_size', 100)
