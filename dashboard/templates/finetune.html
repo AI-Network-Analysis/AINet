@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AINet Fine-tuning Dashboard</title>
+  <style>
+    body { font-family: Inter, system-ui, Arial, sans-serif; margin: 24px; color: #222 }
+    .container { max-width: 920px; margin: 0 auto; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .header { background: #111827; color: #fff; padding: 20px; border-radius: 8px; margin-bottom: 16px; }
+    label { display:block; margin: 10px 0 6px; font-weight: 600; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+    button { background: #2563eb; color: #fff; padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    pre { background: #0b1021; color: #d1ffea; padding: 12px; border-radius: 6px; overflow: auto; }
+    a { color: #2563eb; }
+  </style>
+  <script>
+    async function startFinetune(ev) {
+      ev.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true; btn.textContent = 'Starting...';
+      const form = document.getElementById('ft-form');
+      const fd = new FormData(form);
+      const res = await fetch('/finetune/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      btn.disabled = false; btn.textContent = 'Start Fine-tuning';
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      if (data.job_id) {
+        window.currentJob = data.job_id;
+        window.currentRun = data.mlflow_run_id;
+        document.getElementById('mlflowLink').innerHTML = data.mlflow_url ? `<a href="${data.mlflow_url}" target="_blank">Open MLflow Run</a>` : '';
+        pollStatus();
+      }
+    }
+
+    async function pollStatus() {
+      const out = document.getElementById('status');
+      if (!window.currentJob) return;
+      const url = new URL('/finetune/status', window.location.origin);
+      url.searchParams.set('job_id', window.currentJob);
+      if (window.currentRun) url.searchParams.set('run_id', window.currentRun);
+      const res = await fetch(url);
+      const data = await res.json();
+      out.textContent = JSON.stringify(data, null, 2);
+      if (data.job_state && data.job_state !== 'JOB_STATE_SUCCEEDED' && data.job_state !== 'JOB_STATE_FAILED') {
+        setTimeout(pollStatus, 5000);
+      }
+    }
+  </script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>AINet Fine-tuning Dashboard</h1>
+        <p>Upload a JSONL dataset, trigger Vertex AI SFT, and track progress in MLflow.</p>
+      </div>
+
+      <div class="card">
+        <form id="ft-form" onsubmit="startFinetune(event)" enctype="multipart/form-data">
+          <label>Dataset Name</label>
+          <input name="dataset_name" placeholder="my_dataset" required />
+
+          <div class="row">
+            <div>
+              <label>Base Model</label>
+              <input name="base_model" value="gemini-2.5-flash-lite" />
+            </div>
+            <div>
+              <label>Training Steps</label>
+              <input type="number" name="training_steps" min="1" value="100" />
+            </div>
+          </div>
+
+          <label>JSONL File</label>
+          <input type="file" name="file" accept=".jsonl" required />
+          <div style="margin-top:12px"><button id="submitBtn" type="submit">Start Fine-tuning</button></div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Run Link</h3>
+        <div id="mlflowLink"></div>
+      </div>
+
+      <div class="card">
+        <h3>Start Response</h3>
+        <pre id="result"></pre>
+      </div>
+
+      <div class="card">
+        <h3>Job Status</h3>
+        <pre id="status"></pre>
+      </div>
+    </div>
+  </body>
+  </html>

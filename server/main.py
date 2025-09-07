@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from server.database.connection import initialize_database
 from server.api.endpoints import api_router, dashboard_router
+from server.api.finetune import finetune_router
 
 # Configure logging
 logging.basicConfig(
@@ -121,6 +122,7 @@ def create_app(config: dict) -> FastAPI:
     # Include API routers
     app.include_router(api_router, tags=["API"])
     app.include_router(dashboard_router, tags=["Dashboard"])
+    app.include_router(finetune_router)
     
     # Root endpoint
     @app.get("/")
@@ -132,7 +134,8 @@ def create_app(config: dict) -> FastAPI:
             "timestamp": datetime.utcnow().isoformat(),
             "status": "running",
             "docs": "/docs",
-            "dashboard": "/dashboard"
+            "dashboard": "/dashboard",
+            "finetune_dashboard": "/finetune"
         }
     
     # System status endpoint
