@@ -14,12 +14,14 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
+import mlflow
 
 from ..mlops.pipelines.vertex_ai_mlops_pipeline import (
     VertexAIMLOpsManager,
     MLOpsPipeline,
     ModelConfig,
 )
+from mlflow.tracking import MlflowClient
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,15 @@ def _build_manager() -> VertexAIMLOpsManager:
         staging_bucket=bucket,
         experiment_name=os.getenv("MLFLOW_EXPERIMENT", "vertex-ai-llm-finetuning"),
     )
+
+
+def _ensure_mlflow_tracking():
+    """Set MLflow tracking URI explicitly to keep client/server in sync."""
+    tracking = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+    try:
+        mlflow.set_tracking_uri(tracking)
+    except Exception:
+        pass
 
 
 @finetune_router.get("/", response_class=HTMLResponse)
@@ -101,6 +112,7 @@ async def upload_and_start(
         raise HTTPException(status_code=400, detail="Only .jsonl files are supported")
 
     try:
+        _ensure_mlflow_tracking()
         manager = _build_manager()
         pipeline = MLOpsPipeline(manager)
 
@@ -120,7 +132,7 @@ async def upload_and_start(
         mlflow_url: Optional[str] = None
         try:
             from mlflow.tracking import MlflowClient
-
+            _ensure_mlflow_tracking()
             client = MlflowClient()
             exp = client.get_experiment_by_name(os.getenv("MLFLOW_EXPERIMENT", "vertex-ai-llm-finetuning"))
             if exp:
@@ -148,8 +160,52 @@ async def upload_and_start(
 async def job_status(job_id: str, run_id: Optional[str] = None) -> Dict[str, Any]:
     """Fetch latest job state and echo MLflow link if available."""
     try:
+        _ensure_mlflow_tracking()
         manager = _build_manager()
         res = manager.track_training_metrics(job_id, run_id) if run_id else {"job_state": "UNKNOWN"}
+
+        # If succeeded, ensure a model version is registered in MLflow Models
+        if run_id and res.get("job_state") == "JOB_STATE_SUCCEEDED":
+            tuned_model_resource = res.get("model_resource_name")
+            _ensure_mlflow_tracking()
+            client = MlflowClient()
+            run = client.get_run(run_id)
+            params = run.data.params or {}
+            dataset_name = params.get("dataset_name", "vertex_dataset")
+            dataset_version = params.get("version") or params.get("dataset_version")
+            base_model = params.get("base_model")
+            model_registry_name = f"{dataset_name}_vertex_sft"
+
+            # Avoid duplicate registration by checking for an existing version tagged with this tuning job id
+            already = False
+            try:
+                versions = client.search_model_versions(f"name='{model_registry_name}'")
+                for v in versions:
+                    tags = getattr(v, "tags", {}) or {}
+                    if tags.get("vertex_tuning_job_id") == job_id:
+                        already = True
+                        break
+            except Exception:
+                pass
+
+            if not already:
+                try:
+                    manager.create_mlflow_model_version(
+                        model_name=model_registry_name,
+                        endpoint_id=None,
+                        vertex_model_resource_name=tuned_model_resource,
+                        job_id=job_id,
+                        tags={
+                            "dataset_version": dataset_version or "unknown",
+                            "base_model": base_model or "unknown",
+                            "registered_via": "finetune_status",
+                        },
+                    )
+                    res["model_registered"] = True
+                    res["model_name"] = model_registry_name
+                except Exception:
+                    res["model_registered"] = False
+
         return res
     except HTTPException:
         raise

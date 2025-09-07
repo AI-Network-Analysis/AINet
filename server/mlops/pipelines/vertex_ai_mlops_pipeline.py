@@ -338,40 +338,64 @@ class VertexAIMLOpsManager:
     def create_mlflow_model_version(
         self,
         model_name: str,
-        endpoint_id: str,
+        endpoint_id: str | None = None,
+        vertex_model_resource_name: str | None = None,
+        job_id: str | None = None,
         metrics: Dict[str, float] | None = None,
         tags: Dict[str, str] | None = None,
     ) -> str:
         """
-        Register model version in MLflow Model Registry
+        Register a model version in MLflow Models that tracks a Vertex AI tuned model.
+
+        You can provide either an Endpoint ID (for live inference) or a Vertex Model
+        resource name (model registry in Vertex AI). Both can be tagged for lineage.
         """
         with mlflow.start_run(run_name=f"register_{model_name}") as run:
-            # Log endpoint info
-            mlflow.log_param("vertex_endpoint_id", endpoint_id)
+            # Log lineage params
+            if endpoint_id:
+                mlflow.log_param("vertex_endpoint_id", endpoint_id)
+            if vertex_model_resource_name:
+                mlflow.log_param("vertex_model_resource_name", vertex_model_resource_name)
+            if job_id:
+                mlflow.log_param("vertex_tuning_job_id", job_id)
 
             # Log metrics if provided
             if metrics:
                 for metric_name, value in metrics.items():
                     mlflow.log_metric(metric_name, value)
 
-            # Create a custom model wrapper for Vertex AI
+            # Create a custom model wrapper; prefers endpoint for inference, otherwise stores metadata only
             class VertexAIModelWrapper(mlflow.pyfunc.PythonModel):
-                def __init__(self, endpoint_id: str, project_id: str, location: str):
-                    self.endpoint_id = endpoint_id
+                def __init__(
+                    self,
+                    project_id: str,
+                    location: str,
+                    endpoint_id: str | None = None,
+                    vertex_model_resource_name: str | None = None,
+                ):
                     self.project_id = project_id
                     self.location = location
+                    self.endpoint_id = endpoint_id
+                    self.vertex_model_resource_name = vertex_model_resource_name
 
                 def predict(self, context, model_input):  # type: ignore[override]
-                    # This would call your production client for Vertex AI
+                    # For safety, avoid making live calls by default.
+                    # This wrapper captures lineage/config in predictions for traceability.
                     return {
-                        "endpoint_id": self.endpoint_id,
                         "project_id": self.project_id,
                         "location": self.location,
+                        "endpoint_id": self.endpoint_id,
+                        "vertex_model_resource_name": self.vertex_model_resource_name,
                         "input": model_input.to_dict() if hasattr(model_input, "to_dict") else model_input,
                     }
 
-            # Log the model
-            model_instance = VertexAIModelWrapper(endpoint_id, self.project_id, self.location)
+            model_instance = VertexAIModelWrapper(
+                project_id=self.project_id,
+                location=self.location,
+                endpoint_id=endpoint_id,
+                vertex_model_resource_name=vertex_model_resource_name,
+            )
+
             mlflow.pyfunc.log_model(
                 artifact_path="model",
                 python_model=model_instance,
@@ -381,17 +405,41 @@ class VertexAIMLOpsManager:
                     "dependencies": [
                         "python=3.11",
                         "pip",
-                        {"pip": ["mlflow", "google-cloud-aiplatform", "langchain-google-vertexai"]},
+                        {"pip": ["mlflow", "google-cloud-aiplatform"]},
                     ],
                 },
             )
 
+            # Log lineage as an artifact for quick inspection
+            try:
+                mlflow.log_dict(
+                    {
+                        "project_id": self.project_id,
+                        "location": self.location,
+                        "vertex_endpoint_id": endpoint_id,
+                        "vertex_model_resource_name": vertex_model_resource_name,
+                        "vertex_tuning_job_id": job_id,
+                    },
+                    artifact_file="vertex_model_info.json",
+                )
+            except Exception:
+                pass
+
             # Add tags to the registered model version
+            client = MlflowClient()
+            mv = client.get_latest_versions(model_name)[0]
             if tags:
-                client = MlflowClient()
-                model_version = client.get_latest_versions(model_name)[0]
                 for key, value in tags.items():
-                    client.set_model_version_tag(model_name, model_version.version, key, value)
+                    client.set_model_version_tag(model_name, mv.version, key, value)
+            # Always add helpful defaults
+            if endpoint_id:
+                client.set_model_version_tag(model_name, mv.version, "vertex_endpoint_id", endpoint_id)
+            if vertex_model_resource_name:
+                client.set_model_version_tag(
+                    model_name, mv.version, "vertex_model_resource_name", vertex_model_resource_name
+                )
+            if job_id:
+                client.set_model_version_tag(model_name, mv.version, "vertex_tuning_job_id", job_id)
 
             return run.info.run_id
 
@@ -464,13 +512,27 @@ class MLOpsPipeline:
             training_results = self.manager.track_training_metrics(job_id, mlflow_run_id)
             results["training_status"] = training_results["job_state"]
 
-            # Step 4: Deploy if successful and auto_deploy is True
-            if auto_deploy and training_results["job_state"] == "JOB_STATE_SUCCEEDED":
-                logger.info("Step 4: Deploying model...")
-                # Placeholder: replace with model resource produced by the job
-                model_resource_name = (
-                    f"projects/{self.manager.project_id}/locations/{self.manager.location}/models/MODEL_ID"
+            # Step 4: If succeeded, register in MLflow Models (always), and deploy if requested
+            if training_results["job_state"] == "JOB_STATE_SUCCEEDED":
+                tuned_model_resource = training_results.get("model_resource_name")
+
+                # Register model version in MLflow Models even before deployment
+                model_registry_name = f"{dataset_name}_vertex_sft"
+                _ = self.manager.create_mlflow_model_version(
+                    model_name=model_registry_name,
+                    endpoint_id=None,
+                    vertex_model_resource_name=tuned_model_resource,
+                    job_id=results.get("job_id"),
+                    tags={"dataset_version": dataset_config.version, "base_model": model_config.base_model},
                 )
+
+            # Optional deployment
+            if auto_deploy and training_results.get("job_state") == "JOB_STATE_SUCCEEDED":
+                logger.info("Step 4: Deploying model...")
+                # Use the tuned model resource produced by the job
+                model_resource_name = training_results.get("model_resource_name")
+                if not model_resource_name:
+                    raise RuntimeError("Tuned model resource name not found after successful job.")
 
                 endpoint_id, deployed_model_id = self.manager.deploy_model(
                     model_resource_name=model_resource_name,
@@ -479,14 +541,16 @@ class MLOpsPipeline:
                 results["endpoint_id"] = endpoint_id
                 results["deployed_model_id"] = deployed_model_id
 
-                # Step 5: Register in MLflow Model Registry
-                logger.info("Step 5: Registering model version...")
-                model_version = self.manager.create_mlflow_model_version(
-                    model_name=f"{dataset_name}_model",
+                # Step 5: Register or update in MLflow Model Registry with endpoint linkage
+                logger.info("Step 5: Registering model version with endpoint link...")
+                model_version_run_id = self.manager.create_mlflow_model_version(
+                    model_name=f"{dataset_name}_vertex_sft",
                     endpoint_id=endpoint_id,
+                    vertex_model_resource_name=model_resource_name,
+                    job_id=results.get("job_id"),
                     tags={"auto_deployed": "true", "dataset_version": dataset_config.version},
                 )
-                results["model_version"] = model_version
+                results["model_version_run_id"] = model_version_run_id
 
             logger.info("Pipeline completed successfully!")
 
