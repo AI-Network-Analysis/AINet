@@ -164,6 +164,29 @@ class VertexAIMLOpsManager:
             mlflow.log_metric("dataset_size", len(df))
             mlflow.log_metric("dataset_columns", len(df.columns))
 
+            # Log dataset artifacts: original file and lightweight previews
+            try:
+                # Guard against extremely large files (log up to 100MB)
+                max_bytes = 100 * 1024 * 1024
+                if os.path.getsize(dataset_path) <= max_bytes:
+                    mlflow.log_artifact(dataset_path, artifact_path=f"datasets/{dataset_name}/{version_hash}")
+                # Preview artifacts
+                preview_dir = os.path.join("/tmp", f"mlflow_ds_preview_{version_hash}")
+                os.makedirs(preview_dir, exist_ok=True)
+                # Save head and schema
+                head_path = os.path.join(preview_dir, "head.jsonl")
+                df.head(50).to_json(head_path, orient="records", lines=True)
+                schema_path = os.path.join(preview_dir, "schema.json")
+                # Infer simple schema from first row
+                first_row = df.head(1).to_dict(orient="records")
+                import json as _json
+                with open(schema_path, "w") as f:
+                    _json.dump({"columns": list(df.columns), "sample": first_row}, f, indent=2)
+                mlflow.log_artifacts(preview_dir, artifact_path=f"datasets/{dataset_name}/{version_hash}/preview")
+            except Exception:
+                # Non-fatal if artifact logging fails
+                pass
+
         return DatasetConfig(dataset_name=dataset_name, gcs_path=gcs_path, version=version_hash)
 
     def create_fine_tuning_job(

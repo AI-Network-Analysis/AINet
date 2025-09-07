@@ -127,6 +127,17 @@ async def upload_and_start(
             ds_cfg, ModelConfig(base_model=base_model, training_steps=int(training_steps))
         )
 
+        # Attach the dataset file as an artifact to the tuning run as well
+        try:
+            import mlflow
+            mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"))
+            with mlflow.start_run(run_id=run_id):
+                # Log only if small enough (<100MB)
+                if os.path.getsize(tmp_path) <= 100 * 1024 * 1024:
+                    mlflow.log_artifact(tmp_path, artifact_path=f"datasets/{dataset_name}/{ds_cfg.version}")
+        except Exception:
+            pass
+
         # Construct MLflow run URL if local UI
         tracking = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000").rstrip("/")
         mlflow_url: Optional[str] = None
