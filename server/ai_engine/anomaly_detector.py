@@ -96,7 +96,11 @@ class AnomalyDetector:
         
         # Initialize LLM via provider (supports Vertex tuned models via env)
         model_config = self.config.get('ai', {})
-        self.llm = build_chat_model(model_config)
+        try:
+            self.llm = build_chat_model(model_config)
+        except Exception as e:
+            logger.warning(f"LLM unavailable, using heuristic fallback. Reason: {e}")
+            self.llm = None
         
         # Configure analysis parameters
         self.window_size = model_config.get('anomaly_detection', {}).get('window_size', 100)
@@ -302,6 +306,10 @@ class AnomalyDetector:
                     ]
                 }
             
+            # If LLM is unavailable, go straight to fallback
+            if not getattr(self, 'llm', None):
+                raise RuntimeError("LLM not initialized; using fallback analysis")
+
             # Prepare context for AI analysis
             context = self._prepare_ai_context(
                 state['hostname'],
