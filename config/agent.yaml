@@ -2,10 +2,11 @@
 
 # Agent Configuration
 agent:
-  collection_interval: 30  # seconds between metric collections
+  collection_interval: 15  # seconds between metric collections
   batch_size: 10          # number of metrics to batch together
   max_retries: 3          # max retries for operations
   timeout: 30             # timeout in seconds
+  monitoring_config_path: "config/monitoring.yaml"  # Path to monitoring configuration
 
 # Data Sender Configuration
 sender:

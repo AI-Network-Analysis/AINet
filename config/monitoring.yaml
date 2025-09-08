@@ -1,15 +1,15 @@
 ai_analysis_enabled: true
 ai_analysis_interval: 300
 collection_interval: 15
-mode: system_focus
+mode: network_focus
 network:
-  anomaly_detection: false
-  bandwidth_monitoring: false
+  anomaly_detection: true
+  bandwidth_monitoring: true
   bandwidth_spike_threshold: 200.0
   baseline_samples: 50
   conn_rate_critical_threshold: 200.0
   conn_rate_warning_threshold: 50.0
-  connection_monitoring: false
+  connection_monitoring: true
   detect_arp_gateway_change: true
   enabled: true
   history_size: 200
@@ -17,7 +17,7 @@ network:
   latency_monitoring: true
   latency_warning_threshold: 100.0
   packet_loss_critical_threshold: 5.0
-  packet_loss_monitoring: false
+  packet_loss_monitoring: true
   packet_loss_warning_threshold: 1.0
   recv_rate_spike_factor: 3.0
   sensitivity: 0.9
