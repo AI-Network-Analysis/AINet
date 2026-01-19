@@ -1,4 +1,4 @@
-# AINet - AI-Powered Network Anomaly Detection System
+# AINet - AI-Powered Network Anomaly Detection System [![Demo Video](https://img.shields.io/badge/▶️_Watch_Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/BZHvH7XK-G4)
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
